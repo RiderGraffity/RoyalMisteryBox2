@@ -9,8 +9,15 @@
       if (tg) {
         tg.ready();
         tg.expand();
-        return tg.initData || "";
+        if (tg.initData) return tg.initData;
       }
+    } catch (e) {}
+    // Фолбек: якщо перейшли сюди кнопкою "Адмін-панель" з головної
+    // сторінки, initData передається явним query-параметром.
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const fromQuery = params.get("tgInitData");
+      if (fromQuery) return fromQuery;
     } catch (e) {}
     return "";
   }

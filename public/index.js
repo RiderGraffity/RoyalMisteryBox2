@@ -98,6 +98,14 @@ async function syncWithServer() {
   } catch (e) {
     console.warn("Could not load shop catalog, using local fallback:", e.message);
   }
+
+  try {
+    const data = await apiPost("/api/admin/verify", { initData: getInitData() });
+    state.isAdmin = !!(data && data.success);
+  } catch (e) {
+    // Не адмін або немає валідного initData - це нормально для звичайних гравців.
+    state.isAdmin = false;
+  }
 }
 
 function haptic(style = "medium") {
@@ -197,6 +205,7 @@ const state = {
   shopSections: DEFAULT_SHOP_SECTIONS,
   selectedMissions: new Set(),
   confirmedMissions: new Set(),
+  isAdmin: false,
   stats: { name: "PokerKing", rank: "Gold", boxesOpened: 0, prizesWon: 0, rating: 0 },
 };
 
@@ -605,6 +614,11 @@ function renderMorePage() {
         <h2 class="mb-subpage-title">Інше</h2>
         <p class="mb-subpage-sub">Історія відкриттів</p>
       </div>
+      ${state.isAdmin ? `
+        <button class="mb-btn-primary" data-action="open-admin" style="margin-bottom:16px;width:100%;">
+          ${icon("shield", 18, "currentColor")} Адмін-панель
+        </button>
+      ` : ""}
       ${body}
     </div>
   `;
@@ -853,6 +867,16 @@ function handleBuy(price, label) {
   render();
 }
 
+function openAdminPanel() {
+  // Переходимо на admin.html і передаємо той самий initData явним
+  // query-параметром - так адмінка залишається захищеною підписом
+  // Telegram навіть якщо сам браузер не збереже initData при переході
+  // на іншу сторінку того ж домену.
+  const initData = getInitData();
+  const url = "admin.html" + (initData ? ("?tgInitData=" + encodeURIComponent(initData)) : "");
+  window.location.href = url;
+}
+
 /* ------------------------------------------------------------------ */
 /*  Event delegation                                                   */
 /* ------------------------------------------------------------------ */
@@ -880,6 +904,9 @@ function attachHandlers() {
   });
   document.querySelectorAll('[data-action="select-mission"]').forEach(el => {
     el.onclick = () => handleSelectMission(el.dataset.missionId, el.dataset.label);
+  });
+  document.querySelectorAll('[data-action="open-admin"]').forEach(el => {
+    el.onclick = openAdminPanel;
   });
 }
 
