@@ -118,6 +118,72 @@ function icon(name, size = 18, color = "currentColor", extraAttrs = "") {
 }
 
 
+// Fallback catalog used only if the server is unreachable (e.g. testing
+// outside Telegram). Normally state.shopSections is populated from
+// GET /api/shop, which reflects whatever admins have edited.
+const DEFAULT_SHOP_SECTIONS = [
+  {
+    id: "merch",
+    title: "Брендовий мерч",
+    subtitle: null,
+    icon: "crown",
+    items: [
+      { label: "Set Royal Poker", price: 3200, img: "assets/set.png" },
+      { label: "Royal Poker кружка", price: 850, img: "assets/mug.png" },
+      { label: "Royal Poker кепка", price: 1100, img: "assets/cap.png" },
+      { label: "Royal Poker термос", price: 2100, img: "assets/thermos.png" },
+    ],
+  },
+  {
+    id: "vouchers",
+    title: "Ваучери 3 доби",
+    subtitle: "Ваучер",
+    icon: "ticket",
+    items: [
+      { label: "50", price: 80 },
+      { label: "100", price: 150 },
+      { label: "150", price: 220 },
+      { label: "200", price: 290 },
+      { label: "300", price: 420 },
+    ],
+  },
+  {
+    id: "fifty-fifty",
+    title: "Квитки 50/50",
+    subtitle: "Квиток",
+    icon: "handshake",
+    items: [
+      { label: "До 350", price: 180 },
+      { label: "До 550", price: 290 },
+      { label: "До 1000", price: 500 },
+      { label: "До 2000", price: 900 },
+    ],
+  },
+  {
+    id: "tournament",
+    title: "Турнірні квитки",
+    subtitle: "Квиток",
+    icon: "award",
+    items: [
+      { label: "До 250", price: 250 },
+      { label: "До 350", price: 350 },
+      { label: "До 550", price: 520 },
+      { label: "До 900", price: 780 },
+    ],
+  },
+  {
+    id: "chips",
+    title: "Фішки",
+    subtitle: "Фішки",
+    icon: "disc",
+    items: [
+      { label: "250", price: 340 },
+      { label: "500", price: 650 },
+      { label: "1000", price: 1250 },
+    ],
+  },
+];
+
 const state = {
   page: "box",
   boxState: "idle",
@@ -283,71 +349,6 @@ function renderMysteryBoxPage() {
 /* ------------------------------------------------------------------ */
 /*  Other pages                                                        */
 /* ------------------------------------------------------------------ */
-// Fallback catalog used only if the server is unreachable (e.g. testing
-// outside Telegram). Normally state.shopSections is populated from
-// GET /api/shop, which reflects whatever admins have edited.
-const DEFAULT_SHOP_SECTIONS = [
-  {
-    id: "merch",
-    title: "Брендовий мерч",
-    subtitle: null,
-    icon: "crown",
-    items: [
-      { label: "Set Royal Poker", price: 3200, img: "assets/set.png" },
-      { label: "Royal Poker кружка", price: 850, img: "assets/mug.png" },
-      { label: "Royal Poker кепка", price: 1100, img: "assets/cap.png" },
-      { label: "Royal Poker термос", price: 2100, img: "assets/thermos.png" },
-    ],
-  },
-  {
-    id: "vouchers",
-    title: "Ваучери 3 доби",
-    subtitle: "Ваучер",
-    icon: "ticket",
-    items: [
-      { label: "50", price: 80 },
-      { label: "100", price: 150 },
-      { label: "150", price: 220 },
-      { label: "200", price: 290 },
-      { label: "300", price: 420 },
-    ],
-  },
-  {
-    id: "fifty-fifty",
-    title: "Квитки 50/50",
-    subtitle: "Квиток",
-    icon: "handshake",
-    items: [
-      { label: "До 350", price: 180 },
-      { label: "До 550", price: 290 },
-      { label: "До 1000", price: 500 },
-      { label: "До 2000", price: 900 },
-    ],
-  },
-  {
-    id: "tournament",
-    title: "Турнірні квитки",
-    subtitle: "Квиток",
-    icon: "award",
-    items: [
-      { label: "До 250", price: 250 },
-      { label: "До 350", price: 350 },
-      { label: "До 550", price: 520 },
-      { label: "До 900", price: 780 },
-    ],
-  },
-  {
-    id: "chips",
-    title: "Фішки",
-    subtitle: "Фішки",
-    icon: "disc",
-    items: [
-      { label: "250", price: 340 },
-      { label: "500", price: 650 },
-      { label: "1000", price: 1250 },
-    ],
-  },
-];
 
 const RP_MISSION_SECTIONS = [
   {
