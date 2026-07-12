@@ -1,6 +1,7 @@
 (function () {
   const root = document.getElementById("adminRoot");
   let ALL_MISSIONS = [];
+  let ALL_MISSION_ITEMS = [];
   let ALL_SHOP_ITEMS = [];
 
   function getInitData() {
@@ -65,6 +66,59 @@
     return Object.values(groups);
   }
 
+  function groupMissionItems(items) {
+    const groups = {};
+    items.forEach((it) => {
+      const key = `${it.category}::${it.sectionId}`;
+      if (!groups[key]) groups[key] = { category: it.category, sectionTitle: it.sectionTitle, items: [] };
+      groups[key].items.push(it);
+    });
+    return Object.values(groups);
+  }
+
+  function renderMissionItems(items) {
+    const groups = groupMissionItems(items);
+    return groups
+      .map((group) => {
+        const rows = group.items
+          .map((it) => {
+            const rewardLabelField = it.category === "keys"
+              ? `<input type="text" class="admin-shop-item-img" data-field="rewardLabel" data-item-id="${it.id}" placeholder="напр. 1 ключ" value="${escapeHtml(it.rewardLabel)}" />`
+              : "";
+            return `
+          <div class="admin-shop-item ${it.active ? "" : "admin-shop-item-inactive"}" data-item-id="${it.id}">
+            <div class="admin-shop-item-row">
+              <input type="text" class="admin-shop-item-label" data-field="label" data-item-id="${it.id}" value="${escapeHtml(it.label)}" />
+              <input type="number" class="admin-shop-item-price" data-field="rewardAmount" data-item-id="${it.id}" min="0" value="${it.rewardAmount}" />
+            </div>
+            ${rewardLabelField ? `<div class="admin-shop-item-row">${rewardLabelField}
+              <label class="admin-shop-item-active">
+                <input type="checkbox" data-field="active" data-item-id="${it.id}" ${it.active ? "checked" : ""} />
+                Активна
+              </label>
+            </div>` : `
+            <div class="admin-shop-item-row">
+              <label class="admin-shop-item-active">
+                <input type="checkbox" data-field="active" data-item-id="${it.id}" ${it.active ? "checked" : ""} />
+                Активна
+              </label>
+            </div>`}
+            <button class="admin-btn admin-btn-secondary admin-mission-item-save" data-save-mission-id="${it.id}">Зберегти</button>
+            <div class="admin-status" data-mission-item-status="${it.id}"></div>
+          </div>
+        `;
+          })
+          .join("");
+        return `
+          <div class="admin-mission-group">
+            <div class="admin-mission-group-title">${escapeHtml(group.sectionTitle)} ${group.category === "keys" ? "(ключі)" : "(RP)"}</div>
+            ${rows}
+          </div>
+        `;
+      })
+      .join("");
+  }
+
   function renderShopItems(items) {
     const groups = groupShopItems(items);
     return groups
@@ -100,8 +154,9 @@
       .join("");
   }
 
-  function renderPanel(prizes, missions, shopItems) {
+  function renderPanel(prizes, missions, missionItems, shopItems) {
     ALL_MISSIONS = missions;
+    ALL_MISSION_ITEMS = missionItems;
     ALL_SHOP_ITEMS = shopItems;
     const prizeOptions = prizes
       .map((p) => `<option value="${p.id}">${escapeHtml(p.name)}</option>`)
@@ -116,7 +171,7 @@
           <label class="admin-mission-row" data-mission-id="${m.id}">
             <input type="checkbox" class="admin-mission-checkbox" data-mission-id="${m.id}" />
             <span class="admin-mission-label">${escapeHtml(m.label)}</span>
-            <span class="admin-mission-reward">${escapeHtml(m.reward)}</span>
+            <span class="admin-mission-reward" data-mission-reward="${m.id}">${escapeHtml(m.reward)}</span>
             <span class="admin-mission-flag" data-mission-flag="${m.id}"></span>
           </label>
         `
@@ -140,6 +195,8 @@
           <label>Telegram ID користувача</label>
           <input type="text" id="targetUserId" placeholder="напр. 123456789" inputmode="numeric" />
         </div>
+        <button class="admin-btn admin-btn-secondary" id="lookupUserBtn">Показати інформацію</button>
+        <div class="admin-status" id="lookupStatus"></div>
       </div>
 
       <div class="admin-card">
@@ -172,6 +229,12 @@
       </div>
 
       <div class="admin-card">
+        <h3>Місії та нагороди</h3>
+        <p class="admin-hint">Змінюйте текст місій, розмір нагороди та (для розділу "Ключі") текст нагороди, або вимикайте місію повністю. Зміни одразу зʼявляються в застосунку.</p>
+        <div id="missionItemsList">${renderMissionItems(missionItems)}</div>
+      </div>
+
+      <div class="admin-card">
         <h3>Підтвердження місій</h3>
         <p class="admin-hint">Відмітьте виконані місії користувача — у нього вони загоряться золотим. Скидається автоматично щонеділі.</p>
         <button class="admin-btn admin-btn-secondary" id="loadMissionsBtn">Завантажити місії користувача</button>
@@ -183,6 +246,7 @@
 
     document.getElementById("giveKeysBtn").onclick = onGiveKeys;
     document.getElementById("setPrizeBtn").onclick = onSetPrize;
+    document.getElementById("lookupUserBtn").onclick = onLookupUser;
     document.getElementById("loadMissionsBtn").onclick = onLoadUserMissions;
     document.querySelectorAll(".admin-mission-checkbox").forEach((cb) => {
       cb.onchange = () => onToggleMissionConfirmed(cb.dataset.missionId, cb.checked);
@@ -190,6 +254,35 @@
     document.querySelectorAll(".admin-shop-item-save").forEach((btn) => {
       btn.onclick = () => onSaveShopItem(btn.dataset.saveItemId);
     });
+    document.querySelectorAll(".admin-mission-item-save").forEach((btn) => {
+      btn.onclick = () => onSaveMissionItem(btn.dataset.saveMissionId);
+    });
+  }
+
+  async function onLookupUser() {
+    const btn = document.getElementById("lookupUserBtn");
+    const statusEl = document.getElementById("lookupStatus");
+    const targetUserId = document.getElementById("targetUserId").value.trim();
+
+    if (!targetUserId) return showStatus(statusEl, false, "Вкажіть Telegram ID користувача");
+
+    btn.disabled = true;
+    try {
+      const initData = getInitData();
+      const data = await api(
+        `/api/admin/user?initData=${encodeURIComponent(initData)}&targetUserId=${encodeURIComponent(targetUserId)}`
+      );
+      const u = data.user;
+      showStatus(
+        statusEl,
+        true,
+        `ClubGG ID: ${u.clubGgId ? escapeHtml(u.clubGgId) : "не вказано"} · Ключі: ${u.tickets} · RP: ${u.rpPoints}`
+      );
+    } catch (e) {
+      showStatus(statusEl, false, "Помилка: " + e.message);
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   async function onGiveKeys() {
@@ -272,6 +365,52 @@
     }
   }
 
+  async function onSaveMissionItem(missionId) {
+    const statusEl = document.querySelector(`[data-mission-item-status="${missionId}"]`);
+    const btn = document.querySelector(`.admin-mission-item-save[data-save-mission-id="${missionId}"]`);
+    const labelInput = document.querySelector(`[data-field="label"][data-item-id="${missionId}"]`);
+    const rewardAmountInput = document.querySelector(`[data-field="rewardAmount"][data-item-id="${missionId}"]`);
+    const rewardLabelInput = document.querySelector(`[data-field="rewardLabel"][data-item-id="${missionId}"]`);
+    const activeInput = document.querySelector(`[data-field="active"][data-item-id="${missionId}"]`);
+
+    const label = labelInput.value.trim();
+    const rewardAmount = Number(rewardAmountInput.value);
+    const rewardLabel = rewardLabelInput ? rewardLabelInput.value.trim() : undefined;
+    const active = activeInput.checked;
+
+    if (!label) return showStatus(statusEl, false, "Вкажіть текст місії");
+    if (!Number.isFinite(rewardAmount) || rewardAmount < 0) return showStatus(statusEl, false, "Вкажіть коректну нагороду");
+    if (rewardLabelInput && !rewardLabel) return showStatus(statusEl, false, "Вкажіть текст нагороди");
+
+    btn.disabled = true;
+    try {
+      const body = { initData: getInitData(), label, rewardAmount, active };
+      if (rewardLabel !== undefined) body.rewardLabel = rewardLabel;
+      const data = await api(`/api/admin/mission-items/${encodeURIComponent(missionId)}`, {
+        method: "PUT",
+        body,
+      });
+      const card = document.querySelector(`.admin-shop-item[data-item-id="${missionId}"]`);
+      if (card) card.classList.toggle("admin-shop-item-inactive", !data.item.active);
+      const idx = ALL_MISSION_ITEMS.findIndex((it) => it.id === missionId);
+      if (idx !== -1) ALL_MISSION_ITEMS[idx] = data.item;
+      const missionIdx = ALL_MISSIONS.findIndex((m) => m.id === missionId);
+      if (missionIdx !== -1) {
+        ALL_MISSIONS[missionIdx].label = data.item.label;
+        ALL_MISSIONS[missionIdx].reward = data.item.category === "keys" ? data.item.rewardLabel : `${data.item.rewardAmount} RP`;
+        const labelSpan = document.querySelector(`.admin-mission-label[data-mission-id="${missionId}"]`) || document.querySelector(`[data-mission-id="${missionId}"] .admin-mission-label`);
+        if (labelSpan) labelSpan.textContent = ALL_MISSIONS[missionIdx].label;
+        const rewardSpan = document.querySelector(`[data-mission-reward="${missionId}"]`);
+        if (rewardSpan) rewardSpan.textContent = ALL_MISSIONS[missionIdx].reward;
+      }
+      showStatus(statusEl, true, "Місію оновлено.");
+    } catch (e) {
+      showStatus(statusEl, false, "Помилка: " + e.message);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
   async function onLoadUserMissions() {
     const btn = document.getElementById("loadMissionsBtn");
     const statusEl = document.getElementById("missionsLoadStatus");
@@ -315,14 +454,19 @@
     }
 
     try {
-      await api("/api/admin/confirm-mission", {
+      const data = await api("/api/admin/confirm-mission", {
         method: "POST",
         body: { initData: getInitData(), targetUserId, missionId, confirmed },
       });
+      const balanceNote = `(Ключі: ${data.tickets}, RP: ${data.rpPoints})`;
       showStatus(
         statusEl,
         true,
-        confirmed ? "Місію підтверджено — у користувача вона загориться золотим." : "Підтвердження знято."
+        (confirmed
+          ? "Місію підтверджено — нагороду нараховано, у користувача вона загориться золотим."
+          : "Підтвердження знято — нагороду скасовано.") +
+          " " +
+          balanceNote
       );
     } catch (e) {
       showStatus(statusEl, false, "Помилка: " + e.message);
@@ -336,8 +480,9 @@
       await api("/api/admin/verify", { method: "POST", body: { initData } });
       const { prizes } = await api(`/api/admin/prizes?initData=${encodeURIComponent(initData)}`);
       const { missions } = await api(`/api/admin/missions?initData=${encodeURIComponent(initData)}`);
+      const { items: missionItems } = await api(`/api/admin/mission-items?initData=${encodeURIComponent(initData)}`);
       const { items: shopItems } = await api(`/api/admin/shop-items?initData=${encodeURIComponent(initData)}`);
-      renderPanel(prizes, missions, shopItems);
+      renderPanel(prizes, missions, missionItems, shopItems);
     } catch (e) {
       renderDenied();
     }

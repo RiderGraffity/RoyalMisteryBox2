@@ -526,6 +526,13 @@ html, body { margin: 0; padding: 0; }
 .mb-btn-primary:active { transform: scale(0.97); }
 .mb-btn-ghost { border: 1px solid rgba(30,26,51,0.15); cursor: pointer; background: transparent; color: #6b6480; font-weight: 700; font-size: 13px; padding: 12px; border-radius: 14px; }
 .mb-btn-ghost:active { background: rgba(30,26,51,0.04); }
+.mb-input {
+  width: 100%; box-sizing: border-box; border: 1px solid rgba(30,26,51,0.15); background: #F7F4EC;
+  color: #1E1A33; font-size: 14px; font-weight: 600; padding: 13px 14px; border-radius: 14px;
+  margin-bottom: 12px; outline: none; text-align: center;
+}
+.mb-input:focus { border-color: #E8BE4F; }
+.mb-modal-error { color: #D64545; font-size: 12px; font-weight: 700; margin: -4px 0 12px; }
 
 @media (max-width: 340px) {
   .mb-hero-title { font-size: 22px; }

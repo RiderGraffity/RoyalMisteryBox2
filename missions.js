@@ -1,113 +1,60 @@
-// This mirrors the mission sections defined in front/index.js
-// (RP_MISSION_SECTIONS / KEY_MISSION_SECTIONS). Ids are generated the same
-// way on both sides (`${section.id}-${itemIndex}`), so they always line up -
-// if you add/reorder missions in the front-end, mirror the change here too.
+// Canonical mission catalog seed. This is only used to populate the
+// `mission_items` table the very first time the server runs - after that,
+// the database is the single source of truth and can be edited by admins
+// through the admin panel (see app.js -> /api/admin/mission-items).
+//
+// Ids are stable and referenced by user progress records (selected/confirmed
+// maps) and by the front-end, so avoid changing them once the app has real
+// data - editing label/reward through the admin panel is safe, changing the
+// `id` of an existing row is not.
+//
+// category "rp"   -> reward is credited as RP Points, displayed as "N RP".
+// category "keys" -> reward is credited as Mystery Box keys, displayed using
+//                     rewardLabel as-is (e.g. "1 ключ", "+1 ключ", "2 ключі").
+//
+// `isBonus` rows are the "complete all missions" bonus card shown at the end
+// of a section. They are purely informational (same as in the original
+// front-end) - they are not selectable/confirmable missions themselves, but
+// admins can still edit their label/reward text here.
+const MISSION_SEED = [
+  // --- RP: Щоденні місії ---------------------------------------------
+  { id: "daily-0", category: "rp", sectionId: "daily", sectionTitle: "Щоденні місії", sectionIcon: "target", sectionOrder: 1, itemOrder: 0, isBonus: 0, label: "Зіграти 100 кеш-рук", rewardAmount: 5, rewardLabel: "RP" },
+  { id: "daily-1", category: "rp", sectionId: "daily", sectionTitle: "Щоденні місії", sectionIcon: "target", sectionOrder: 1, itemOrder: 1, isBonus: 0, label: "Зіграти 300 кеш-рук", rewardAmount: 10, rewardLabel: "RP" },
+  { id: "daily-2", category: "rp", sectionId: "daily", sectionTitle: "Щоденні місії", sectionIcon: "target", sectionOrder: 1, itemOrder: 2, isBonus: 0, label: "Зіграти 2 MTT", rewardAmount: 5, rewardLabel: "RP" },
+  { id: "daily-3", category: "rp", sectionId: "daily", sectionTitle: "Щоденні місії", sectionIcon: "target", sectionOrder: 1, itemOrder: 3, isBonus: 0, label: "Потрапити в ITM", rewardAmount: 5, rewardLabel: "RP" },
+  { id: "daily-bonus", category: "rp", sectionId: "daily", sectionTitle: "Щоденні місії", sectionIcon: "target", sectionOrder: 1, itemOrder: 999, isBonus: 1, label: "Виконати всі місії", rewardAmount: 10, rewardLabel: "RP" },
 
-const RP_MISSION_SECTIONS = [
-  {
-    id: "daily",
-    title: "Щоденні місії",
-    items: [
-      { label: "Зіграти 100 кеш-рук", reward: "5 RP" },
-      { label: "Зіграти 300 кеш-рук", reward: "10 RP" },
-      { label: "Зіграти 2 MTT", reward: "5 RP" },
-      { label: "Потрапити в ITM", reward: "5 RP" },
-    ],
-  },
-  {
-    id: "weekly",
-    title: "Тижневі місії",
-    items: [
-      { label: "Зіграти 1500 кеш-рук", reward: "30 RP" },
-      { label: "Зіграти 12 MTT", reward: "30 RP" },
-      { label: "Потрапити в ITM 5 разів", reward: "30 RP" },
-    ],
-  },
-  {
-    id: "deposits",
-    title: "Депозити",
-    items: [
-      { label: "Перший депозит дня", reward: "5 RP" },
-      { label: "Кожен 3-й депозит", reward: "10 RP" },
-      { label: "Кожен 5-й депозит", reward: "20 RP" },
-    ],
-  },
-  {
-    id: "activity",
-    title: "Активність",
-    items: [
-      { label: "7 активних днів", reward: "25 RP" },
-      { label: "30 активних днів", reward: "100 RP" },
-    ],
-  },
+  // --- RP: Тижневі місії ----------------------------------------------
+  { id: "weekly-0", category: "rp", sectionId: "weekly", sectionTitle: "Тижневі місії", sectionIcon: "calendar-days", sectionOrder: 2, itemOrder: 0, isBonus: 0, label: "Зіграти 1500 кеш-рук", rewardAmount: 30, rewardLabel: "RP" },
+  { id: "weekly-1", category: "rp", sectionId: "weekly", sectionTitle: "Тижневі місії", sectionIcon: "calendar-days", sectionOrder: 2, itemOrder: 1, isBonus: 0, label: "Зіграти 12 MTT", rewardAmount: 30, rewardLabel: "RP" },
+  { id: "weekly-2", category: "rp", sectionId: "weekly", sectionTitle: "Тижневі місії", sectionIcon: "calendar-days", sectionOrder: 2, itemOrder: 2, isBonus: 0, label: "Потрапити в ITM 5 разів", rewardAmount: 30, rewardLabel: "RP" },
+  { id: "weekly-bonus", category: "rp", sectionId: "weekly", sectionTitle: "Тижневі місії", sectionIcon: "calendar-days", sectionOrder: 2, itemOrder: 999, isBonus: 1, label: "Виконати всі місії", rewardAmount: 40, rewardLabel: "RP" },
+
+  // --- RP: Депозити -----------------------------------------------------
+  { id: "deposits-0", category: "rp", sectionId: "deposits", sectionTitle: "Депозити", sectionIcon: "credit-card", sectionOrder: 3, itemOrder: 0, isBonus: 0, label: "Перший депозит дня", rewardAmount: 5, rewardLabel: "RP" },
+  { id: "deposits-1", category: "rp", sectionId: "deposits", sectionTitle: "Депозити", sectionIcon: "credit-card", sectionOrder: 3, itemOrder: 1, isBonus: 0, label: "Кожен 3-й депозит", rewardAmount: 10, rewardLabel: "RP" },
+  { id: "deposits-2", category: "rp", sectionId: "deposits", sectionTitle: "Депозити", sectionIcon: "credit-card", sectionOrder: 3, itemOrder: 2, isBonus: 0, label: "Кожен 5-й депозит", rewardAmount: 20, rewardLabel: "RP" },
+
+  // --- RP: Активність -----------------------------------------------------
+  { id: "activity-0", category: "rp", sectionId: "activity", sectionTitle: "Активність", sectionIcon: "zap", sectionOrder: 4, itemOrder: 0, isBonus: 0, label: "7 активних днів", rewardAmount: 25, rewardLabel: "RP" },
+  { id: "activity-1", category: "rp", sectionId: "activity", sectionTitle: "Активність", sectionIcon: "zap", sectionOrder: 4, itemOrder: 1, isBonus: 0, label: "30 активних днів", rewardAmount: 100, rewardLabel: "RP" },
+
+  // --- Keys: Кеш ----------------------------------------------------------
+  { id: "cash-0", category: "keys", sectionId: "cash", sectionTitle: "Кеш", sectionIcon: "spade", sectionOrder: 1, itemOrder: 0, isBonus: 0, label: "1000 рук", rewardAmount: 1, rewardLabel: "1 ключ" },
+  { id: "cash-1", category: "keys", sectionId: "cash", sectionTitle: "Кеш", sectionIcon: "spade", sectionOrder: 1, itemOrder: 1, isBonus: 0, label: "3000 рук за тиждень", rewardAmount: 1, rewardLabel: "+1 ключ" },
+
+  // --- Keys: MTT ------------------------------------------------------
+  { id: "mtt-0", category: "keys", sectionId: "mtt", sectionTitle: "MTT", sectionIcon: "trophy", sectionOrder: 2, itemOrder: 0, isBonus: 0, label: "5 ITM", rewardAmount: 1, rewardLabel: "1 ключ" },
+  { id: "mtt-1", category: "keys", sectionId: "mtt", sectionTitle: "MTT", sectionIcon: "trophy", sectionOrder: 2, itemOrder: 1, isBonus: 0, label: "Перемога в турнірі", rewardAmount: 1, rewardLabel: "1 ключ" },
+
+  // --- Keys: Місії ------------------------------------------------------
+  { id: "missions-0", category: "keys", sectionId: "missions", sectionTitle: "Місії", sectionIcon: "target", sectionOrder: 3, itemOrder: 0, isBonus: 0, label: "Виконати всі щоденні місії", rewardAmount: 1, rewardLabel: "1 ключ" },
+  { id: "missions-1", category: "keys", sectionId: "missions", sectionTitle: "Місії", sectionIcon: "target", sectionOrder: 3, itemOrder: 1, isBonus: 0, label: "Виконати всі тижневі місії", rewardAmount: 2, rewardLabel: "2 ключі" },
+
+  // --- Keys: Активність -----------------------------------------------
+  { id: "streak-0", category: "keys", sectionId: "streak", sectionTitle: "Активність", sectionIcon: "flame", sectionOrder: 4, itemOrder: 0, isBonus: 0, label: "14 активних днів поспіль", rewardAmount: 1, rewardLabel: "1 ключ" },
+  { id: "streak-1", category: "keys", sectionId: "streak", sectionTitle: "Активність", sectionIcon: "flame", sectionOrder: 4, itemOrder: 1, isBonus: 0, label: "30 активних днів поспіль", rewardAmount: 2, rewardLabel: "2 ключі" },
 ];
-
-const KEY_MISSION_SECTIONS = [
-  {
-    id: "cash",
-    title: "Кеш",
-    items: [
-      { label: "1000 рук", reward: "1 ключ" },
-      { label: "3000 рук за тиждень", reward: "+1 ключ" },
-    ],
-  },
-  {
-    id: "mtt",
-    title: "MTT",
-    items: [
-      { label: "5 ITM", reward: "1 ключ" },
-      { label: "Перемога в турнірі", reward: "1 ключ" },
-    ],
-  },
-  {
-    id: "missions",
-    title: "Місії",
-    items: [
-      { label: "Виконати всі щоденні місії", reward: "1 ключ" },
-      { label: "Виконати всі тижневі місії", reward: "2 ключі" },
-    ],
-  },
-  {
-    id: "streak",
-    title: "Активність",
-    items: [
-      { label: "14 активних днів поспіль", reward: "1 ключ" },
-      { label: "30 активних днів поспіль", reward: "2 ключі" },
-    ],
-  },
-];
-
-function buildMissionIndex() {
-  const index = {};
-  function add(sections, category) {
-    sections.forEach((section) => {
-      section.items.forEach((item, i) => {
-        const id = `${section.id}-${i}`;
-        index[id] = {
-          id,
-          category, // "rp" | "keys"
-          sectionId: section.id,
-          sectionTitle: section.title,
-          label: item.label,
-          reward: item.reward,
-        };
-      });
-    });
-  }
-  add(RP_MISSION_SECTIONS, "rp");
-  add(KEY_MISSION_SECTIONS, "keys");
-  return index;
-}
-
-const MISSION_INDEX = buildMissionIndex();
-
-function isValidMissionId(id) {
-  return Boolean(MISSION_INDEX[id]);
-}
-
-function getAllMissionsFlat() {
-  return Object.values(MISSION_INDEX);
-}
 
 /**
  * Missions reset every week, starting Sunday. We key each user's mission
@@ -123,10 +70,6 @@ function getCurrentWeekKey(date = new Date()) {
 }
 
 module.exports = {
-  RP_MISSION_SECTIONS,
-  KEY_MISSION_SECTIONS,
-  MISSION_INDEX,
-  isValidMissionId,
-  getAllMissionsFlat,
+  MISSION_SEED,
   getCurrentWeekKey,
 };

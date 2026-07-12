@@ -5,9 +5,9 @@ const cors = require("cors");
 const path = require("path");
 
 const { PRIZE_POOL, getPrizeById, rollRandomPrize } = require("./prizes");
-const { isValidMissionId, getAllMissionsFlat } = require("./missions");
 const db = require("./db");
-const { verifyInitData, isAdmin, notifyAdminsOfWin } = require("./telegram");
+const { verifyInitData, isAdmin, notifyAdminsOfWin, notifyUserKeysCredited } = require("./telegram");
+const { announceMysteryBoxWin } = require("./announce");
 
 const app = express();
 
@@ -35,8 +35,33 @@ app.post("/api/auth", (req, res) => {
       tickets: user.tickets,
       rpPoints: user.rpPoints,
       history: user.history,
+      clubGgId: user.clubGgId,
     },
   });
+});
+
+/* ------------------------------------------------------------------ */
+/* ClubGG ID verification (player facing)                             */
+/* ------------------------------------------------------------------ */
+// Players must submit their ClubGG ID before they're allowed to open the
+// Mystery Box (see /api/open-box below), so every win can be traced back
+// to a real ClubGG account.
+app.post("/api/set-clubgg-id", (req, res) => {
+  const tgUser = verifyInitData(req.body.initData);
+  if (!tgUser) {
+    return res.status(401).json({ success: false, error: "invalid_init_data" });
+  }
+
+  const clubGgId = String(req.body.clubGgId || "").trim();
+  if (!clubGgId) {
+    return res.status(400).json({ success: false, error: "missing_clubgg_id" });
+  }
+  if (clubGgId.length > 40) {
+    return res.status(400).json({ success: false, error: "invalid_clubgg_id" });
+  }
+
+  const user = db.setClubGgId(tgUser.id, clubGgId);
+  res.json({ success: true, user: { id: user.id, clubGgId: user.clubGgId } });
 });
 
 /* ------------------------------------------------------------------ */
@@ -49,6 +74,9 @@ app.post("/api/open-box", async (req, res) => {
   }
 
   const current = db.getUser(tgUser.id);
+  if (!current.clubGgId) {
+    return res.status(400).json({ success: false, error: "clubgg_required" });
+  }
   if (current.tickets <= 0) {
     return res.status(400).json({ success: false, error: "no_tickets" });
   }
@@ -61,7 +89,12 @@ app.post("/api/open-box", async (req, res) => {
     return res.status(400).json({ success: false, error: "no_tickets" });
   }
 
-  notifyAdminsOfWin(tgUser, prize).catch((e) => console.error(e));
+  notifyAdminsOfWin(tgUser, prize, user.clubGgId).catch((e) => console.error(e));
+
+  const displayName = tgUser.username
+    ? `@${tgUser.username}`
+    : [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") || "Гравець";
+  announceMysteryBoxWin({ displayName, prizeLabel: prize.name }).catch((e) => console.error(e));
 
   res.json({
     success: true,
@@ -84,7 +117,7 @@ app.post("/api/missions/select", (req, res) => {
     return res.status(401).json({ success: false, error: "invalid_init_data" });
   }
   const { missionId, selected } = req.body;
-  if (!missionId || !isValidMissionId(missionId)) {
+  if (!missionId || !db.isValidMissionId(missionId)) {
     return res.status(400).json({ success: false, error: "unknown_mission" });
   }
   const missions = db.setMissionSelected(tgUser.id, missionId, !!selected);
@@ -106,6 +139,14 @@ app.get("/api/missions/mine", (req, res) => {
 /* ------------------------------------------------------------------ */
 app.get("/api/shop", (req, res) => {
   res.json({ success: true, sections: db.getShopSections({ onlyActive: true }) });
+});
+
+/* ------------------------------------------------------------------ */
+/* Missions catalog (player facing) - reads the live catalog so admin   */
+/* edits to mission text/rewards show up in the app immediately.       */
+/* ------------------------------------------------------------------ */
+app.get("/api/missions", (req, res) => {
+  res.json({ success: true, sections: db.getMissionSections({ onlyActive: true }) });
 });
 
 /* ------------------------------------------------------------------ */
@@ -143,7 +184,15 @@ app.post("/api/admin/give-keys", requireAdmin, (req, res) => {
   if (!targetUserId || !amount) {
     return res.status(400).json({ success: false, error: "missing_fields" });
   }
-  const user = db.addTickets(targetUserId, Number(amount));
+  const numericAmount = Number(amount);
+  const user = db.addTickets(targetUserId, numericAmount);
+
+  // Let the player know in the bot whenever this call actually handed
+  // them new keys (not when an admin reduces their balance).
+  if (numericAmount > 0) {
+    notifyUserKeysCredited(targetUserId, numericAmount, user.tickets).catch((e) => console.error(e));
+  }
+
   res.json({ success: true, user });
 });
 
@@ -161,7 +210,40 @@ app.post("/api/admin/set-prize", requireAdmin, (req, res) => {
 });
 
 app.get("/api/admin/missions", requireAdmin, (req, res) => {
-  res.json({ success: true, missions: getAllMissionsFlat() });
+  res.json({ success: true, missions: db.getAllMissionsFlat() });
+});
+
+// Full mission catalog, including bonus rows and inactive ones, so the
+// admin panel can show and let admins edit everything that already
+// exists (mirrors /api/admin/shop-items below).
+app.get("/api/admin/mission-items", requireAdmin, (req, res) => {
+  res.json({ success: true, items: db.getAllMissionItemsFlat() });
+});
+
+// Edit an existing mission. Admins can only change label/reward/active on
+// missions that already exist - this endpoint does not create or delete
+// missions, nor move a mission between the RP/keys categories.
+app.put("/api/admin/mission-items/:id", requireAdmin, (req, res) => {
+  const { id } = req.params;
+  const existing = db.getMissionItem(id);
+  if (!existing) {
+    return res.status(404).json({ success: false, error: "unknown_mission" });
+  }
+
+  const { label, rewardAmount, rewardLabel, active } = req.body;
+
+  if (label !== undefined && !String(label).trim()) {
+    return res.status(400).json({ success: false, error: "invalid_label" });
+  }
+  if (rewardAmount !== undefined && (!Number.isFinite(Number(rewardAmount)) || Number(rewardAmount) < 0)) {
+    return res.status(400).json({ success: false, error: "invalid_reward_amount" });
+  }
+  if (rewardLabel !== undefined && !String(rewardLabel).trim()) {
+    return res.status(400).json({ success: false, error: "invalid_reward_label" });
+  }
+
+  const item = db.updateMissionItem(id, { label, rewardAmount, rewardLabel, active });
+  res.json({ success: true, item });
 });
 
 app.get("/api/admin/user-missions", requireAdmin, (req, res) => {
@@ -179,11 +261,23 @@ app.post("/api/admin/confirm-mission", requireAdmin, (req, res) => {
   if (!targetUserId || !missionId) {
     return res.status(400).json({ success: false, error: "missing_fields" });
   }
-  if (!isValidMissionId(missionId)) {
+  if (!db.isValidMissionId(missionId)) {
     return res.status(400).json({ success: false, error: "unknown_mission" });
   }
-  const missions = db.setMissionConfirmed(targetUserId, missionId, confirmed !== false);
-  res.json({ success: true, missions });
+  const result = db.setMissionConfirmed(targetUserId, missionId, confirmed !== false);
+
+  // If this confirmation is the one that just credited keys to the user,
+  // let them know in the bot.
+  if (result.keysCredited > 0) {
+    notifyUserKeysCredited(targetUserId, result.keysCredited, result.tickets).catch((e) => console.error(e));
+  }
+
+  res.json({
+    success: true,
+    missions: result.missions,
+    tickets: result.tickets,
+    rpPoints: result.rpPoints,
+  });
 });
 
 // Full catalog (including inactive items) so the admin panel can show

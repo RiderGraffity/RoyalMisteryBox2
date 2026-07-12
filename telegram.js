@@ -71,16 +71,64 @@ async function sendTelegramMessage(chatId, text) {
   }
 }
 
-async function notifyAdminsOfWin(user, prize) {
+async function sendTelegramPhoto(chatId, photoBuffer, { filename = "photo.png", caption, replyMarkup } = {}) {
+  if (!BOT_TOKEN) {
+    console.warn("BOT_TOKEN is not set - cannot send Telegram photo");
+    return;
+  }
+  try {
+    const form = new FormData();
+    form.append("chat_id", chatId);
+    if (caption) form.append("caption", caption);
+    form.append("parse_mode", "HTML");
+    if (replyMarkup) form.append("reply_markup", JSON.stringify(replyMarkup));
+    form.append("photo", new Blob([photoBuffer], { type: "image/png" }), filename);
+
+    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+      method: "POST",
+      body: form,
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      console.error("Telegram sendPhoto failed:", res.status, body);
+    }
+  } catch (err) {
+    console.error("Telegram sendPhoto error:", err);
+  }
+}
+
+async function notifyAdminsOfWin(user, prize, clubGgId) {
   const displayName = [user.first_name, user.last_name].filter(Boolean).join(" ") || user.firstName || "Гравець";
   const usernamePart = user.username ? `@${user.username}` : "без юзернейму";
   const text =
     `🎉 <b>Новий виграш у Mystery Box</b>\n` +
     `Користувач: <b>${escapeHtml(displayName)}</b> (${escapeHtml(usernamePart)})\n` +
     `Telegram ID: <code>${user.id}</code>\n` +
+    `ClubGG ID: <code>${escapeHtml(clubGgId || "не вказано")}</code>\n` +
     `Виграш: <b>${escapeHtml(prize.name)}</b>`;
 
   await Promise.all(ADMIN_IDS.map((adminId) => sendTelegramMessage(adminId, text)));
+}
+
+// Ukrainian plural form of "ключ" (key) for a given count, e.g.
+// 1 -> ключ, 2 -> ключі, 5 -> ключів, 11 -> ключів, 21 -> ключ.
+function pluralizeKeys(n) {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return "ключ";
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "ключі";
+  return "ключів";
+}
+
+// Lets a player know in the bot that they were just credited Mystery Box
+// keys - either manually by an admin, or automatically by confirming a
+// mission whose reward is keys.
+async function notifyUserKeysCredited(telegramId, amount, totalTickets) {
+  const keysWord = pluralizeKeys(amount);
+  const text =
+    `🔑 Вам нараховано <b>${amount} ${keysWord}</b> для Mystery Box!\n` +
+    `Загальний баланс: <b>${totalTickets}</b>.`;
+  await sendTelegramMessage(telegramId, text);
 }
 
 function escapeHtml(str) {
@@ -92,8 +140,11 @@ function escapeHtml(str) {
 
 module.exports = {
   ADMIN_IDS,
+  BOT_TOKEN,
   verifyInitData,
   isAdmin,
   sendTelegramMessage,
+  sendTelegramPhoto,
   notifyAdminsOfWin,
+  notifyUserKeysCredited,
 };

@@ -73,6 +73,8 @@ async function syncWithServer() {
     state.tickets = data.user.tickets;
     state.rpPoints = data.user.rpPoints;
     state.balance = data.user.rpPoints;
+    state.clubGgId = data.user.clubGgId || null;
+    if (!state.clubGgId) state.showClubGgModal = true;
   } catch (e) {
     // Not running inside Telegram / server unreachable - fall back to local demo state.
     console.warn("Could not sync with server, using local demo state:", e.message);
@@ -97,6 +99,17 @@ async function syncWithServer() {
     }
   } catch (e) {
     console.warn("Could not load shop catalog, using local fallback:", e.message);
+  }
+
+  try {
+    const res = await fetch("/api/missions");
+    const data = await res.json();
+    if (data.success && data.sections) {
+      if (Array.isArray(data.sections.rp) && data.sections.rp.length) state.missionSections.rp = data.sections.rp;
+      if (Array.isArray(data.sections.keys) && data.sections.keys.length) state.missionSections.keys = data.sections.keys;
+    }
+  } catch (e) {
+    console.warn("Could not load missions catalog, using local fallback:", e.message);
   }
 
   try {
@@ -192,6 +205,93 @@ const DEFAULT_SHOP_SECTIONS = [
   },
 ];
 
+// Fallback catalogs used only if the server is unreachable (e.g. testing
+// outside Telegram). Normally state.missionSections is populated from
+// GET /api/missions, which reflects whatever admins have edited.
+const DEFAULT_RP_MISSION_SECTIONS = [
+  {
+    id: "daily",
+    title: "Щоденні місії",
+    icon: "target",
+    items: [
+      { label: "Зіграти 100 кеш-рук", reward: 5 },
+      { label: "Зіграти 300 кеш-рук", reward: 10 },
+      { label: "Зіграти 2 MTT", reward: 5 },
+      { label: "Потрапити в ITM", reward: 5 },
+    ],
+    bonus: { label: "Виконати всі місії", reward: 10 },
+  },
+  {
+    id: "weekly",
+    title: "Тижневі місії",
+    icon: "calendar-days",
+    items: [
+      { label: "Зіграти 1500 кеш-рук", reward: 30 },
+      { label: "Зіграти 12 MTT", reward: 30 },
+      { label: "Потрапити в ITM 5 разів", reward: 30 },
+    ],
+    bonus: { label: "Виконати всі місії", reward: 40 },
+  },
+  {
+    id: "deposits",
+    title: "Депозити",
+    icon: "credit-card",
+    items: [
+      { label: "Перший депозит дня", reward: 5 },
+      { label: "Кожен 3-й депозит", reward: 10 },
+      { label: "Кожен 5-й депозит", reward: 20 },
+    ],
+  },
+  {
+    id: "activity",
+    title: "Активність",
+    icon: "zap",
+    items: [
+      { label: "7 активних днів", reward: 25 },
+      { label: "30 активних днів", reward: 100 },
+    ],
+  },
+];
+
+const DEFAULT_KEY_MISSION_SECTIONS = [
+  {
+    id: "cash",
+    title: "Кеш",
+    icon: "spade",
+    items: [
+      { label: "1000 рук", reward: "1 ключ" },
+      { label: "3000 рук за тиждень", reward: "+1 ключ" },
+    ],
+  },
+  {
+    id: "mtt",
+    title: "MTT",
+    icon: "trophy",
+    items: [
+      { label: "5 ITM", reward: "1 ключ" },
+      { label: "Перемога в турнірі", reward: "1 ключ" },
+    ],
+  },
+  {
+    id: "missions",
+    title: "Місії",
+    icon: "target",
+    items: [
+      { label: "Виконати всі щоденні місії", reward: "1 ключ" },
+      { label: "Виконати всі тижневі місії", reward: "2 ключі" },
+    ],
+  },
+  {
+    id: "streak",
+    title: "Активність",
+    icon: "flame",
+    items: [
+      { label: "14 активних днів поспіль", reward: "1 ключ" },
+      { label: "30 активних днів поспіль", reward: "2 ключі" },
+    ],
+  },
+];
+
 const state = {
   page: "box",
   boxState: "idle",
@@ -203,9 +303,13 @@ const state = {
   rpPoints: 0,
   missionsTab: "rp",
   shopSections: DEFAULT_SHOP_SECTIONS,
+  missionSections: { rp: DEFAULT_RP_MISSION_SECTIONS, keys: DEFAULT_KEY_MISSION_SECTIONS },
   selectedMissions: new Set(),
   confirmedMissions: new Set(),
   isAdmin: false,
+  clubGgId: null,
+  showClubGgModal: false,
+  clubGgError: "",
   stats: { name: "PokerKing", rank: "Gold", boxesOpened: 0, prizesWon: 0, rating: 0 },
 };
 
@@ -228,7 +332,9 @@ function render() {
   document.getElementById("bottomNav").innerHTML = renderBottomNav();
 
   const modalContainer = document.getElementById("modalContainer");
-  if (state.boxState === "revealed" && state.prize) {
+  if (state.showClubGgModal) {
+    modalContainer.innerHTML = renderClubGgModal();
+  } else if (state.boxState === "revealed" && state.prize) {
     modalContainer.innerHTML = renderPrizeModal(state.prize);
   } else {
     modalContainer.innerHTML = "";
@@ -359,89 +465,6 @@ function renderMysteryBoxPage() {
 /*  Other pages                                                        */
 /* ------------------------------------------------------------------ */
 
-const RP_MISSION_SECTIONS = [
-  {
-    id: "daily",
-    title: "Щоденні місії",
-    icon: "target",
-    items: [
-      { label: "Зіграти 100 кеш-рук", reward: 5 },
-      { label: "Зіграти 300 кеш-рук", reward: 10 },
-      { label: "Зіграти 2 MTT", reward: 5 },
-      { label: "Потрапити в ITM", reward: 5 },
-    ],
-    bonus: { label: "Виконати всі місії", reward: 10 },
-  },
-  {
-    id: "weekly",
-    title: "Тижневі місії",
-    icon: "calendar-days",
-    items: [
-      { label: "Зіграти 1500 кеш-рук", reward: 30 },
-      { label: "Зіграти 12 MTT", reward: 30 },
-      { label: "Потрапити в ITM 5 разів", reward: 30 },
-    ],
-    bonus: { label: "Виконати всі місії", reward: 40 },
-  },
-  {
-    id: "deposits",
-    title: "Депозити",
-    icon: "credit-card",
-    items: [
-      { label: "Перший депозит дня", reward: 5 },
-      { label: "Кожен 3-й депозит", reward: 10 },
-      { label: "Кожен 5-й депозит", reward: 20 },
-    ],
-  },
-  {
-    id: "activity",
-    title: "Активність",
-    icon: "zap",
-    items: [
-      { label: "7 активних днів", reward: 25 },
-      { label: "30 активних днів", reward: 100 },
-    ],
-  },
-];
-
-const KEY_MISSION_SECTIONS = [
-  {
-    id: "cash",
-    title: "Кеш",
-    icon: "spade",
-    items: [
-      { label: "1000 рук", reward: "1 ключ" },
-      { label: "3000 рук за тиждень", reward: "+1 ключ" },
-    ],
-  },
-  {
-    id: "mtt",
-    title: "MTT",
-    icon: "trophy",
-    items: [
-      { label: "5 ITM", reward: "1 ключ" },
-      { label: "Перемога в турнірі", reward: "1 ключ" },
-    ],
-  },
-  {
-    id: "missions",
-    title: "Місії",
-    icon: "target",
-    items: [
-      { label: "Виконати всі щоденні місії", reward: "1 ключ" },
-      { label: "Виконати всі тижневі місії", reward: "2 ключі" },
-    ],
-  },
-  {
-    id: "streak",
-    title: "Активність",
-    icon: "flame",
-    items: [
-      { label: "14 активних днів поспіль", reward: "1 ключ" },
-      { label: "30 активних днів поспіль", reward: "2 ключі" },
-    ],
-  },
-];
 
 function renderMissionCard(item, isBonus, missionId) {
   const rewardLabel = typeof item.reward === "number"
@@ -490,7 +513,7 @@ function renderMissionSection(section) {
 
 function renderMissionsPage() {
   const tab = state.missionsTab || "rp";
-  const sections = (tab === "rp" ? RP_MISSION_SECTIONS : KEY_MISSION_SECTIONS)
+  const sections = (tab === "rp" ? state.missionSections.rp : state.missionSections.keys)
     .map(renderMissionSection).join("");
   return `
     <div class="mb-page mb-subpage mb-missions-page">
@@ -639,6 +662,10 @@ function renderProfilePage() {
         <div class="mb-profile-name">${stats.name}</div>
         <div class="mb-profile-rank">${icon("crown", 13, COLORS.gold)}<span>Ранг: ${stats.rank}</span></div>
       </div>
+      <button class="mb-btn-ghost" data-action="edit-clubgg" style="width:100%;margin-bottom:16px;">
+        ${icon("key", 14, "#8B4FE0")}
+        ClubGG ID: ${state.clubGgId ? state.clubGgId : "не вказано (натисни, щоб додати)"}
+      </button>
       <div class="mb-stats-grid">
         <div class="mb-stat-card">${icon("gift", 18, "#8B4FE0")}<div class="mb-stat-value">${stats.boxesOpened}</div><div class="mb-stat-label">Боксів відкрито</div></div>
         <div class="mb-stat-card">${icon("trophy", 18, COLORS.goldDeep)}<div class="mb-stat-value">${stats.prizesWon}</div><div class="mb-stat-label">Призів виграно</div></div>
@@ -669,6 +696,31 @@ function renderBottomNav() {
       </button>
     `;
   }).join("");
+}
+
+/* ------------------------------------------------------------------ */
+/*  ClubGG ID verification modal                                      */
+/* ------------------------------------------------------------------ */
+function renderClubGgModal() {
+  return `
+    <div class="mb-modal-overlay">
+      <div class="mb-modal-card" style="--rarity-color:${COLORS.gold};--rarity-glow:rgba(232,190,79,0.5);">
+        <div class="mb-modal-badge">${icon("badge-check", 14)}<span>Верифікація</span></div>
+        <div class="mb-modal-icon-wrap">${icon("key", 40, COLORS.goldDeep, 'stroke-width="1.6"')}</div>
+        <div class="mb-modal-prize-name">Вкажи свій ClubGG ID</div>
+        <p class="mb-modal-sub">Це потрібно один раз, щоб ми могли зарахувати твої виграші на правильний акаунт ClubGG.</p>
+        <input type="text" class="mb-input" id="clubGgInput" placeholder="Напр. 123456789" value="${state.clubGgId ? escAttr(state.clubGgId) : ""}" />
+        ${state.clubGgError ? `<p class="mb-modal-error">${state.clubGgError}</p>` : ""}
+        <div class="mb-modal-actions">
+          <button class="mb-btn-primary" data-action="save-clubgg">Зберегти</button>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function escAttr(str) {
+  return String(str).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 }
 
 /* ------------------------------------------------------------------ */
@@ -749,6 +801,11 @@ function runRandomSelection(startIndex, onDone) {
 
 function handleOpen() {
   if (state.boxState !== "idle" || state.tickets <= 0) return;
+  if (!state.clubGgId) {
+    state.showClubGgModal = true;
+    render();
+    return;
+  }
   haptic("medium");
   state.boxState = "selecting";
   render();
@@ -813,6 +870,28 @@ function closeModal() {
   state.prize = null;
   state.boxState = "idle";
   render();
+}
+
+async function saveClubGgId() {
+  const input = document.getElementById("clubGgInput");
+  const value = (input?.value || "").trim();
+  if (!value) {
+    state.clubGgError = "Введи свій ClubGG ID";
+    render();
+    return;
+  }
+  try {
+    await apiPost("/api/set-clubgg-id", { initData: getInitData(), clubGgId: value });
+    state.clubGgId = value;
+    state.clubGgError = "";
+    state.showClubGgModal = false;
+    haptic("success");
+    showToast("ClubGG ID збережено");
+    render();
+  } catch (e) {
+    state.clubGgError = "Не вдалося зберегти. Спробуй ще раз.";
+    render();
+  }
 }
 
 function openAnother() {
@@ -898,6 +977,12 @@ function attachHandlers() {
   });
   document.querySelectorAll('[data-action="close-modal"]').forEach(el => {
     el.onclick = closeModal;
+  });
+  document.querySelectorAll('[data-action="save-clubgg"]').forEach(el => {
+    el.onclick = saveClubGgId;
+  });
+  document.querySelectorAll('[data-action="edit-clubgg"]').forEach(el => {
+    el.onclick = () => { state.clubGgError = ""; state.showClubGgModal = true; render(); };
   });
   document.querySelectorAll('[data-action="buy"]').forEach(el => {
     el.onclick = () => handleBuy(parseInt(el.dataset.price, 10), el.dataset.label);
