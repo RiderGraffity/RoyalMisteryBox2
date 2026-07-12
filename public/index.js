@@ -619,6 +619,9 @@ function renderMorePage() {
           ${icon("shield", 18, "currentColor")} Адмін-панель
         </button>
       ` : ""}
+      <div style="opacity:0.6;font-size:12px;text-align:center;margin-bottom:16px;">
+        Debug: твій Telegram ID — ${state.debugTelegramId || "не визначено"}, admin: ${state.isAdmin ? "так" : "ні"}
+      </div>
       ${body}
     </div>
   `;
@@ -920,7 +923,10 @@ function attachHandlers() {
       tg.ready();
       tg.expand();
       const user = tg.initDataUnsafe?.user;
-      if (user) state.stats.name = user.first_name || state.stats.name;
+      if (user) {
+        state.stats.name = user.first_name || state.stats.name;
+        state.debugTelegramId = user.id;
+      }
     }
   } catch (e) {}
   render();
