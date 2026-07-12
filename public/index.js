@@ -188,7 +188,7 @@ const state = {
   page: "box",
   boxState: "idle",
   prize: null,
-  tickets: 3,
+  tickets: 0,
   selectedIndex: 4,
   history: [],
   balance: 0,
