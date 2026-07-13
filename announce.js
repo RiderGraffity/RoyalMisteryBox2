@@ -3,10 +3,23 @@ const sharp = require("sharp");
 
 const { sendTelegramPhoto } = require("./telegram");
 
-// Public group the "successful opening" post goes to, and the bot the
+// Public group(s) the "successful opening" post goes to, and the bot the
 // inline button should hand the player off to. Both can be overridden via
 // env vars without touching code.
-const ANNOUNCE_CHAT_ID = process.env.ANNOUNCE_CHAT_ID || "@ROYAL_POKER1";
+//
+// ANNOUNCE_CHAT_IDS supports multiple chats separated by commas, e.g.:
+//   ANNOUNCE_CHAT_IDS=@ROYAL_POKER1,@ROYAL_POKER2,-1001234567890
+// ANNOUNCE_CHAT_ID (singular) is still read for backwards compatibility if
+// ANNOUNCE_CHAT_IDS isn't set.
+const ANNOUNCE_CHAT_IDS = (
+  process.env.ANNOUNCE_CHAT_IDS ||
+  process.env.ANNOUNCE_CHAT_ID ||
+  "@ROYAL_POKER1"
+)
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+
 const ANNOUNCE_BOT_USERNAME = process.env.ANNOUNCE_BOT_USERNAME || "ROYAL_Admin3_bot";
 
 const TEMPLATE_PATH = path.join(__dirname, "public/assets/announce-template.png");
@@ -77,11 +90,15 @@ async function announceMysteryBoxWin({ displayName, prizeLabel }) {
     ],
   };
 
-  await sendTelegramPhoto(ANNOUNCE_CHAT_ID, imageBuffer, {
-    filename: "mystery-box-win.png",
-    caption,
-    replyMarkup,
-  });
+  await Promise.all(
+    ANNOUNCE_CHAT_IDS.map((chatId) =>
+      sendTelegramPhoto(chatId, imageBuffer, {
+        filename: "mystery-box-win.png",
+        caption,
+        replyMarkup,
+      })
+    )
+  );
 }
 
 module.exports = {
