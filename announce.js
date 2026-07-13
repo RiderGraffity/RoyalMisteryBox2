@@ -1,7 +1,7 @@
 const path = require("path");
 const sharp = require("sharp");
 
-const { sendTelegramPhoto } = require("./telegram");
+const { sendTelegramPhoto, WIN_CHAT_ID } = require("./telegram");
 
 // Public group(s) the "successful opening" post goes to, and the bot the
 // inline button should hand the player off to. Both can be overridden via
@@ -10,10 +10,14 @@ const { sendTelegramPhoto } = require("./telegram");
 // ANNOUNCE_CHAT_IDS supports multiple chats separated by commas, e.g.:
 //   ANNOUNCE_CHAT_IDS=@ROYAL_POKER1,@ROYAL_POKER2,-1001234567890
 // ANNOUNCE_CHAT_ID (singular) is still read for backwards compatibility if
-// ANNOUNCE_CHAT_IDS isn't set.
+// ANNOUNCE_CHAT_IDS isn't set. If neither is set, this falls back to
+// WIN_CHAT_ID (the channel that's already configured for win posts) instead
+// of a hard-coded placeholder, so the banner reaches the real channel even
+// if ANNOUNCE_CHAT_IDS was never set separately.
 const ANNOUNCE_CHAT_IDS = (
   process.env.ANNOUNCE_CHAT_IDS ||
   process.env.ANNOUNCE_CHAT_ID ||
+  WIN_CHAT_ID ||
   "@ROYAL_POKER1"
 )
   .split(",")

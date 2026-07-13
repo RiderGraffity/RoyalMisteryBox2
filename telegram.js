@@ -108,12 +108,12 @@ async function notifyAdminsOfWin(user, prize, clubGgId) {
     `ClubGG ID: <code>${escapeHtml(clubGgId || "не вказано")}</code>\n` +
     `Виграш: <b>${escapeHtml(prize.name)}</b>`;
 
-  // Admins always get notified of every win, regardless of prize type.
-  // If a separate "wins" chat is configured, chip prizes are additionally
-  // posted there too (on top of, not instead of, the admin notification).
-  const recipients = new Set(ADMIN_IDS);
-  if (prize.chipValue && WIN_CHAT_ID) recipients.add(WIN_CHAT_ID);
-  await Promise.all([...recipients].map((chatId) => sendTelegramMessage(chatId, text)));
+  // Admins always get notified privately of every win, regardless of prize
+  // type. The public channel post (with the winner's nickname baked into
+  // the banner graphic) is handled separately by announce.js - this
+  // function no longer also drops a plain-text copy into that same
+  // channel, to avoid a duplicate/ugly second message there.
+  await Promise.all(ADMIN_IDS.map((chatId) => sendTelegramMessage(chatId, text)));
 }
 
 async function notifyAdminsOfPurchase(user, item, clubGgId) {
