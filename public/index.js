@@ -121,7 +121,9 @@ async function syncWithServer() {
     state.rpPoints = data.user.rpPoints;
     state.balance = data.user.rpPoints;
     state.clubGgId = data.user.clubGgId || null;
-    if (!state.clubGgId) state.showClubGgModal = true;
+    state.displayName = data.user.displayName || null;
+    if (state.displayName) state.stats.name = state.displayName;
+    if (!state.clubGgId || !state.displayName) state.showClubGgModal = true;
 
     state.history = (data.user.history || []).map(historyItemFromServer);
     const prizeEntries = state.history.filter((h) => h.type === "prize");
@@ -379,6 +381,7 @@ const state = {
   confirmedMissions: new Set(),
   isAdmin: false,
   clubGgId: null,
+  displayName: null,
   showClubGgModal: false,
   clubGgError: "",
   stats: { name: "PokerKing", rank: "Бронза", boxesOpened: 0, prizesWon: 0, rating: 0 },
@@ -682,7 +685,7 @@ function renderTopPage() {
       <div class="mb-leader-rank">${i + 1}</div>
       <div class="mb-leader-avatar">${icon("user", 16, "#fff")}</div>
       <div class="mb-leader-name">${l.name}</div>
-      <div class="mb-leader-score">${icon("coins", 13, COLORS.goldDeep)} ${l.score.toLocaleString("uk-UA")} RP</div>
+      <div class="mb-leader-score">${icon("coins", 13, COLORS.goldDeep)} ${(l.balance ?? l.score).toLocaleString("uk-UA")} RP</div>
     </div>
   `).join("");
   const body = rows || `<div class="mb-empty">Поки що немає гравців з RP Points</div>`;
@@ -761,7 +764,7 @@ function renderProfilePage() {
       </div>
       <button class="mb-btn-ghost" data-action="edit-clubgg" style="width:100%;margin-bottom:16px;">
         ${icon("key", 14, "#8B4FE0")}
-        ClubGG ID: ${state.clubGgId ? state.clubGgId : "не вказано (натисни, щоб додати)"}
+        ${state.clubGgId && state.displayName ? `Ім'я: ${state.displayName} · ClubGG ID: ${state.clubGgId}` : "Верифікація не пройдена (натисни, щоб додати)"}
       </button>
       <div class="mb-stats-grid">
         <div class="mb-stat-card">${icon("gift", 18, "#8B4FE0")}<div class="mb-stat-value">${stats.boxesOpened}</div><div class="mb-stat-label">Боксів відкрито</div></div>
@@ -804,9 +807,10 @@ function renderClubGgModal() {
       <div class="mb-modal-card" style="--rarity-color:${COLORS.gold};--rarity-glow:rgba(232,190,79,0.5);">
         <div class="mb-modal-badge">${icon("badge-check", 14)}<span>Верифікація</span></div>
         <div class="mb-modal-icon-wrap">${icon("key", 40, COLORS.goldDeep, 'stroke-width="1.6"')}</div>
-        <div class="mb-modal-prize-name">Вкажи свій ClubGG ID</div>
-        <p class="mb-modal-sub">Це потрібно один раз, щоб ми могли зарахувати твої виграші на правильний акаунт ClubGG.</p>
-        <input type="text" class="mb-input" id="clubGgInput" placeholder="Напр. 123456789" value="${state.clubGgId ? escAttr(state.clubGgId) : ""}" />
+        <div class="mb-modal-prize-name">Верифікація акаунту</div>
+        <p class="mb-modal-sub">Це потрібно один раз, щоб ми могли зарахувати твої виграші на правильний акаунт ClubGG та показувати твоє ім'я в розсилках і топі гравців.</p>
+        <input type="text" class="mb-input" id="displayNameInput" placeholder="Ім'я, яке бачитимуть інші" value="${state.displayName ? escAttr(state.displayName) : ""}" style="margin-bottom:10px;" />
+        <input type="text" class="mb-input" id="clubGgInput" placeholder="ClubGG ID, напр. 123456789" value="${state.clubGgId ? escAttr(state.clubGgId) : ""}" />
         ${state.clubGgError ? `<p class="mb-modal-error">${state.clubGgError}</p>` : ""}
         <div class="mb-modal-actions">
           <button class="mb-btn-primary" data-action="save-clubgg">Зберегти</button>
@@ -900,7 +904,7 @@ function runRandomSelection(startIndex, onDone) {
 
 function handleOpen() {
   if (state.boxState !== "idle" || state.tickets <= 0) return;
-  if (!state.clubGgId) {
+  if (!state.clubGgId || !state.displayName) {
     state.showClubGgModal = true;
     render();
     return;
@@ -977,20 +981,30 @@ function closeModal() {
 }
 
 async function saveClubGgId() {
-  const input = document.getElementById("clubGgInput");
-  const value = (input?.value || "").trim();
-  if (!value) {
+  const nameInput = document.getElementById("displayNameInput");
+  const clubGgInput = document.getElementById("clubGgInput");
+  const nameValue = (nameInput?.value || "").trim();
+  const clubGgValue = (clubGgInput?.value || "").trim();
+
+  if (!nameValue) {
+    state.clubGgError = "Введи своє ім'я";
+    render();
+    return;
+  }
+  if (!clubGgValue) {
     state.clubGgError = "Введи свій ClubGG ID";
     render();
     return;
   }
   try {
-    await apiPost("/api/set-clubgg-id", { initData: getInitData(), clubGgId: value });
-    state.clubGgId = value;
+    await apiPost("/api/set-clubgg-id", { initData: getInitData(), clubGgId: clubGgValue, displayName: nameValue });
+    state.clubGgId = clubGgValue;
+    state.displayName = nameValue;
+    state.stats.name = nameValue;
     state.clubGgError = "";
     state.showClubGgModal = false;
     haptic("success");
-    showToast("ClubGG ID збережено");
+    showToast("Дані збережено");
     render();
   } catch (e) {
     state.clubGgError = "Не вдалося зберегти. Спробуй ще раз.";

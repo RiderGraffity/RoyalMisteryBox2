@@ -98,12 +98,13 @@ async function sendTelegramPhoto(chatId, photoBuffer, { filename = "photo.png", 
   }
 }
 
-async function notifyAdminsOfWin(user, prize, clubGgId) {
+async function notifyAdminsOfWin(user, prize, clubGgId, verifiedName) {
   const displayName = [user.first_name, user.last_name].filter(Boolean).join(" ") || user.firstName || "Гравець";
   const usernamePart = user.username ? `@${user.username}` : "без юзернейму";
   const text =
     `🎉 <b>Новий виграш у Mystery Box</b>\n` +
     `Користувач: <b>${escapeHtml(displayName)}</b> (${escapeHtml(usernamePart)})\n` +
+    `Ігрове ім'я: <b>${escapeHtml(verifiedName || "не вказано")}</b>\n` +
     `Telegram ID: <code>${user.id}</code>\n` +
     `ClubGG ID: <code>${escapeHtml(clubGgId || "не вказано")}</code>\n` +
     `Виграш: <b>${escapeHtml(prize.name)}</b>`;
@@ -116,12 +117,13 @@ async function notifyAdminsOfWin(user, prize, clubGgId) {
   await Promise.all(ADMIN_IDS.map((chatId) => sendTelegramMessage(chatId, text)));
 }
 
-async function notifyAdminsOfPurchase(user, item, clubGgId) {
+async function notifyAdminsOfPurchase(user, item, clubGgId, verifiedName) {
   const displayName = [user.first_name, user.last_name].filter(Boolean).join(" ") || user.firstName || "Гравець";
   const usernamePart = user.username ? `@${user.username}` : "без юзернейму";
   const text =
     `🛒 <b>Нова покупка в магазині</b>\n` +
     `Хто купив: <b>${escapeHtml(displayName)}</b> (${escapeHtml(usernamePart)})\n` +
+    `Ігрове ім'я: <b>${escapeHtml(verifiedName || "не вказано")}</b>\n` +
     `Telegram ID: <code>${user.id}</code>\n` +
     `ClubGG ID: <code>${escapeHtml(clubGgId || "не вказано")}</code>\n` +
     `Що купив: <b>${escapeHtml(item.label)}</b>\n` +

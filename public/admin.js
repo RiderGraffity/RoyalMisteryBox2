@@ -276,7 +276,7 @@
       showStatus(
         statusEl,
         true,
-        `ClubGG ID: ${u.clubGgId ? escapeHtml(u.clubGgId) : "не вказано"} · Ключі: ${u.tickets} · RP: ${u.rpPoints}`
+        `Ім'я: ${u.displayName ? escapeHtml(u.displayName) : "не вказано"} · ClubGG ID: ${u.clubGgId ? escapeHtml(u.clubGgId) : "не вказано"} · Ключі: ${u.tickets} · RP: ${u.rpPoints}`
       );
     } catch (e) {
       showStatus(statusEl, false, "Помилка: " + e.message);

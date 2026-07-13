@@ -42,17 +42,21 @@ app.post("/api/auth", (req, res) => {
       rpPoints: user.rpPoints,
       history: user.history,
       clubGgId: user.clubGgId,
+      displayName: user.displayName,
       boxesOpened: user.boxesOpened,
     },
   });
 });
 
 /* ------------------------------------------------------------------ */
-/* ClubGG ID verification (player facing)                             */
+/* Verification: ClubGG ID + display name (player facing)             */
 /* ------------------------------------------------------------------ */
-// Players must submit their ClubGG ID before they're allowed to open the
-// Mystery Box (see /api/open-box below), so every win can be traced back
-// to a real ClubGG account.
+// Players must submit their ClubGG ID and a display name before they're
+// allowed to open the Mystery Box (see /api/open-box below). The ClubGG ID
+// lets every win be traced back to a real ClubGG account, and the display
+// name is what's shown back to the player everywhere else - the
+// leaderboard and the public win announcement - instead of their raw
+// Telegram profile name.
 app.post("/api/set-clubgg-id", (req, res) => {
   const tgUser = verifyInitData(req.body.initData);
   if (!tgUser) {
@@ -67,8 +71,16 @@ app.post("/api/set-clubgg-id", (req, res) => {
     return res.status(400).json({ success: false, error: "invalid_clubgg_id" });
   }
 
-  const user = db.setClubGgId(tgUser.id, clubGgId);
-  res.json({ success: true, user: { id: user.id, clubGgId: user.clubGgId } });
+  const displayName = String(req.body.displayName || "").trim();
+  if (!displayName) {
+    return res.status(400).json({ success: false, error: "missing_display_name" });
+  }
+  if (displayName.length > 40) {
+    return res.status(400).json({ success: false, error: "invalid_display_name" });
+  }
+
+  const user = db.setVerification(tgUser.id, { clubGgId, displayName });
+  res.json({ success: true, user: { id: user.id, clubGgId: user.clubGgId, displayName: user.displayName } });
 });
 
 /* ------------------------------------------------------------------ */
@@ -96,9 +108,10 @@ app.post("/api/open-box", async (req, res) => {
     return res.status(400).json({ success: false, error: "no_tickets" });
   }
 
-  notifyAdminsOfWin(tgUser, prize, user.clubGgId).catch((e) => console.error(e));
+  notifyAdminsOfWin(tgUser, prize, user.clubGgId, user.displayName).catch((e) => console.error(e));
 
-  const displayName = [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") || "Гравець";
+  const displayName =
+    user.displayName || [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") || "Гравець";
   announceMysteryBoxWin({ displayName, prizeLabel: prize.name }).catch((e) => console.error(e));
 
   res.json({
@@ -164,7 +177,9 @@ app.post("/api/shop/buy", async (req, res) => {
     return res.status(400).json({ success: false, error: result.error, user: result.user });
   }
 
-  notifyAdminsOfPurchase(tgUser, result.item, result.user.clubGgId).catch((e) => console.error(e));
+  notifyAdminsOfPurchase(tgUser, result.item, result.user.clubGgId, result.user.displayName).catch((e) =>
+    console.error(e)
+  );
 
   res.json({
     success: true,
@@ -174,6 +189,7 @@ app.post("/api/shop/buy", async (req, res) => {
       rpPoints: result.user.rpPoints,
       tickets: result.user.tickets,
       clubGgId: result.user.clubGgId,
+      displayName: result.user.displayName,
       history: result.user.history,
     },
   });

@@ -37,7 +37,8 @@ db.exec(`
     missionsConfirmed TEXT NOT NULL DEFAULT '{}',
     clubGgId TEXT,
     boxesOpened INTEGER NOT NULL DEFAULT 0,
-    totalRpEarned INTEGER NOT NULL DEFAULT 0
+    totalRpEarned INTEGER NOT NULL DEFAULT 0,
+    displayName TEXT
   );
 `);
 
@@ -109,6 +110,20 @@ function ensureTotalRpEarnedColumn() {
 }
 
 ensureTotalRpEarnedColumn();
+
+// Older databases created before players could enter their own in-game
+// name (see the ClubGG verification step) won't have this column yet -
+// add it in place so existing installs don't need a fresh DB.
+function ensureDisplayNameColumn() {
+  const columns = db.prepare("PRAGMA table_info(users)").all();
+  const hasColumn = columns.some((c) => c.name === "displayName");
+  if (!hasColumn) {
+    db.exec("ALTER TABLE users ADD COLUMN displayName TEXT");
+    console.log("[db] Added displayName column to users table");
+  }
+}
+
+ensureDisplayNameColumn();
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS shop_items (
@@ -275,7 +290,9 @@ const stmts = {
   updateMissions: db.prepare(
     "UPDATE users SET missionsDailyKey = @missionsDailyKey, missionsWeekKey = @missionsWeekKey, missionsMonthKey = @missionsMonthKey, missionsSelected = @missionsSelected, missionsConfirmed = @missionsConfirmed WHERE id = @id"
   ),
-  updateClubGgId: db.prepare("UPDATE users SET clubGgId = @clubGgId WHERE id = @id"),
+  updateClubGgId: db.prepare(
+    "UPDATE users SET clubGgId = @clubGgId, displayName = @displayName WHERE id = @id"
+  ),
   getAllShopItems: db.prepare(
     "SELECT * FROM shop_items ORDER BY sectionOrder ASC, itemOrder ASC"
   ),
@@ -301,7 +318,7 @@ const stmts = {
     WHERE id = @id
   `),
   getLeaderboard: db.prepare(`
-    SELECT id, username, firstName, rpPoints, totalRpEarned, clubGgId
+    SELECT id, username, firstName, displayName, rpPoints, totalRpEarned, clubGgId
     FROM users
     ORDER BY totalRpEarned DESC, id ASC
     LIMIT ?
@@ -320,6 +337,7 @@ function rowToUser(row) {
     rpPoints: row.rpPoints,
     forcedPrizeId: row.forcedPrizeId,
     clubGgId: row.clubGgId || null,
+    displayName: row.displayName || null,
     boxesOpened: row.boxesOpened || 0,
     totalRpEarned: row.totalRpEarned || 0,
     history: JSON.parse(row.history),
@@ -387,13 +405,17 @@ function setForcedPrize(telegramId, prizeId) {
   return user;
 }
 
-// Stores the player's self-reported ClubGG ID. This is required before a
-// user is allowed to open the Mystery Box (see app.js:/api/open-box), so
-// admins always know which ClubGG account a win belongs to.
-function setClubGgId(telegramId, clubGgId) {
+// Stores the player's self-reported ClubGG ID and their chosen display
+// name. Both are collected together during the one-time verification step
+// and are required before a user is allowed to open the Mystery Box (see
+// app.js:/api/open-box), so admins always know which ClubGG account a win
+// belongs to, and the name the player entered here is what's shown back to
+// them everywhere else (leaderboard, public win announcements).
+function setVerification(telegramId, { clubGgId, displayName } = {}) {
   const user = getUser(telegramId);
   user.clubGgId = clubGgId || null;
-  stmts.updateClubGgId.run({ id: user.id, clubGgId: user.clubGgId });
+  user.displayName = displayName || null;
+  stmts.updateClubGgId.run({ id: user.id, clubGgId: user.clubGgId, displayName: user.displayName });
   return user;
 }
 
@@ -746,9 +768,14 @@ function getLeaderboard(limit = 20) {
   return stmts.getLeaderboard.all(Math.max(1, Math.min(100, Number(limit) || 20))).map((row, index) => ({
     rank: index + 1,
     id: row.id,
-    name: row.firstName || `Гравець ${row.id.slice(-4)}`,
+    // Prefer the name the player entered during verification - that's the
+    // one they chose to be known by, and it's what wins get announced
+    // under. Fall back to their Telegram first name, then a placeholder,
+    // for accounts that verified before this field existed.
+    name: row.displayName || row.firstName || `Гравець ${row.id.slice(-4)}`,
     clubGgId: row.clubGgId || null,
     score: row.totalRpEarned,
+    balance: row.rpPoints,
   }));
 }
 
@@ -757,7 +784,7 @@ module.exports = {
   touchUserProfile,
   addTickets,
   setForcedPrize,
-  setClubGgId,
+  setVerification,
   consumeTicketAndRecordPrize,
   getUserMissions,
   setMissionSelected,
