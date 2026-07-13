@@ -100,9 +100,7 @@ app.post("/api/open-box", async (req, res) => {
   const displayName = tgUser.username
     ? `@${tgUser.username}`
     : [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") || "Гравець";
-  if (!prize.chipValue) {
-    announceMysteryBoxWin({ displayName, prizeLabel: prize.name }).catch((e) => console.error(e));
-  }
+  announceMysteryBoxWin({ displayName, prizeLabel: prize.name }).catch((e) => console.error(e));
 
   res.json({
     success: true,
@@ -357,18 +355,18 @@ app.put("/api/admin/shop-items/:id", requireAdmin, (req, res) => {
 const PUBLIC_DIR = path.join(__dirname, "public");
 app.use(express.static(PUBLIC_DIR));
 
-// Явный обработчик корня — чтобы "/" гарантированно отдавал игру,
-// даже если раздача статики по какой-то причине не подхватит index.html.
+// Explicit root handler - so "/" always serves the game, even if static
+// serving somehow doesn't pick up index.html on its own.
 app.get("/", (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, "index.html"));
 });
 
-// Отдельная страница админки.
+// Separate admin panel page.
 app.get("/admin.html", (req, res) => {
   res.sendFile(path.join(PUBLIC_DIR, "admin.html"));
 });
 
-// Health-check для Railway (и вообще для проверки, что сервис жив).
+// Health-check for Railway (and generally to verify the service is alive).
 app.get("/health", (req, res) => {
   res.json({ ok: true });
 });

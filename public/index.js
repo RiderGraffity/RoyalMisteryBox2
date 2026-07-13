@@ -315,7 +315,7 @@ const state = {
   missionsTab: "rp",
   shopSections: DEFAULT_SHOP_SECTIONS,
   missionSections: { rp: DEFAULT_RP_MISSION_SECTIONS, keys: DEFAULT_KEY_MISSION_SECTIONS },
-  missionResetAt: { daily: null, weekly: null },
+  missionResetAt: { daily: null, weekly: null, monthly: null },
   topLeaders: [],
   selectedMissions: new Set(),
   confirmedMissions: new Set(),
@@ -377,7 +377,7 @@ function renderTopBar() {
         <div class="mb-user-avatar">${icon("user", 22, "#fff")}</div>
         <div>
           <div class="mb-username">${state.stats.name} ${icon("crown", 13, COLORS.gold)}</div>
-          <div class="mb-balance">${icon("coins", 14, COLORS.goldDeep)} ${state.balance.toLocaleString("ru-RU")} <span class="mb-balance-currency">RP</span>
+          <div class="mb-balance">${icon("coins", 14, COLORS.goldDeep)} ${state.balance.toLocaleString("uk-UA")} <span class="mb-balance-currency">RP</span>
             <button class="mb-plus-btn">${icon("plus", 13)}</button>
           </div>
         </div>
@@ -512,7 +512,13 @@ function renderMissionSection(section) {
   const cards = section.items
     .map((it, i) => renderMissionCard(it, false, it.id || `${section.id}-${i}`))
     .join("");
-  const resetType = section.id === "daily" ? "daily" : (section.id === "weekly" ? "weekly" : null);
+  const resetType = section.id === "daily"
+    ? "daily"
+    : section.id === "weekly"
+      ? "weekly"
+      : (section.id === "activity" || section.id === "streak")
+        ? "monthly"
+        : null;
   const resetBadge = resetType ? `<span class="mb-mission-reset">${formatResetTimer(resetType)}</span>` : "";
   const bonus = section.bonus ? renderMissionCard(section.bonus, true) : "";
   return `
@@ -603,7 +609,7 @@ function renderShopPage() {
 
       <div class="mb-shop-points-bar">
         <span class="mb-shop-points-label">${icon("gem", 15, "#8B4FE0")} Royal Points (RP)</span>
-        <span class="mb-shop-points-value">${state.rpPoints.toLocaleString("ru-RU")}</span>
+        <span class="mb-shop-points-value">${state.rpPoints.toLocaleString("uk-UA")}</span>
       </div>
 
       ${sections}
@@ -618,10 +624,10 @@ function renderTopPage() {
       <div class="mb-leader-rank">${i + 1}</div>
       <div class="mb-leader-avatar">${icon("user", 16, "#fff")}</div>
       <div class="mb-leader-name">${l.name}</div>
-      <div class="mb-leader-score">${icon("coins", 13, COLORS.goldDeep)} ${l.score.toLocaleString("ru-RU")} RP</div>
+      <div class="mb-leader-score">${icon("coins", 13, COLORS.goldDeep)} ${l.score.toLocaleString("uk-UA")} RP</div>
     </div>
   `).join("");
-  const body = rows || `<div class="mb-empty">РџРѕРєРё С‰Рѕ РЅРµРјР°С” РіСЂР°РІС†С–РІ Р· RP Points</div>`;
+  const body = rows || `<div class="mb-empty">Поки що немає гравців з RP Points</div>`;
   return `
     <div class="mb-page mb-subpage">
       <div class="mb-subpage-header">
@@ -768,7 +774,7 @@ function renderPrizeModal(prize) {
   const rarity = RARITIES[prize.rarity];
   const prizeSub = prize.chipValue
     ? "Виграш відправлено адміністраторам для зарахування фішок"
-    : `+${(prize.rpValue || 0).toLocaleString("ru-RU")} RP зараховано на твій рахунок`;
+    : `+${(prize.rpValue || 0).toLocaleString("uk-UA")} RP зараховано на твій рахунок`;
   return `
     <div class="mb-modal-overlay">
       ${renderConfetti()}
@@ -876,7 +882,7 @@ function handleOpen() {
         {
           id: Date.now(),
           prize: won,
-          date: new Date().toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" }),
+          date: new Date().toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric" }),
         },
         ...state.history,
       ];

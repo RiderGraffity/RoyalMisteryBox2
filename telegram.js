@@ -108,20 +108,24 @@ async function notifyAdminsOfWin(user, prize, clubGgId) {
     `ClubGG ID: <code>${escapeHtml(clubGgId || "не вказано")}</code>\n` +
     `Виграш: <b>${escapeHtml(prize.name)}</b>`;
 
-  const recipients = prize.chipValue && WIN_CHAT_ID ? [WIN_CHAT_ID] : ADMIN_IDS;
-  await Promise.all(recipients.map((chatId) => sendTelegramMessage(chatId, text)));
+  // Admins always get notified of every win, regardless of prize type.
+  // If a separate "wins" chat is configured, chip prizes are additionally
+  // posted there too (on top of, not instead of, the admin notification).
+  const recipients = new Set(ADMIN_IDS);
+  if (prize.chipValue && WIN_CHAT_ID) recipients.add(WIN_CHAT_ID);
+  await Promise.all([...recipients].map((chatId) => sendTelegramMessage(chatId, text)));
 }
 
 async function notifyAdminsOfPurchase(user, item, clubGgId) {
   const displayName = [user.first_name, user.last_name].filter(Boolean).join(" ") || user.firstName || "Гравець";
-  const usernamePart = user.username ? `@${user.username}` : "без username";
+  const usernamePart = user.username ? `@${user.username}` : "без юзернейму";
   const text =
-    `🛒 <b>Новая покупка в магазине</b>\n` +
-    `Кто купил: <b>${escapeHtml(displayName)}</b> (${escapeHtml(usernamePart)})\n` +
+    `🛒 <b>Нова покупка в магазині</b>\n` +
+    `Хто купив: <b>${escapeHtml(displayName)}</b> (${escapeHtml(usernamePart)})\n` +
     `Telegram ID: <code>${user.id}</code>\n` +
-    `ClubGG ID: <code>${escapeHtml(clubGgId || "не указан")}</code>\n` +
-    `Что купил: <b>${escapeHtml(item.label)}</b>\n` +
-    `Стоимость: <b>${item.price} RP</b>`;
+    `ClubGG ID: <code>${escapeHtml(clubGgId || "не вказано")}</code>\n` +
+    `Що купив: <b>${escapeHtml(item.label)}</b>\n` +
+    `Вартість: <b>${item.price} RP</b>`;
 
   await Promise.all(ADMIN_IDS.map((adminId) => sendTelegramMessage(adminId, text)));
 }

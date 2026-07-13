@@ -5,8 +5,10 @@ const Database = require("better-sqlite3");
 const {
   getCurrentDayKey,
   getCurrentWeekKey,
+  getCurrentMonthKey,
   getNextDailyReset,
   getNextWeeklyReset,
+  getNextMonthlyReset,
   MISSION_SEED,
 } = require("./missions");
 const { SHOP_SEED } = require("./products");
@@ -61,6 +63,20 @@ function ensureMissionsDailyKeyColumn() {
 
 ensureMissionsDailyKeyColumn();
 
+// Older databases created before monthly missions ("Активність" / "streak"
+// sections) existed won't have this column yet - add it in place so
+// existing installs don't need a fresh DB.
+function ensureMissionsMonthKeyColumn() {
+  const columns = db.prepare("PRAGMA table_info(users)").all();
+  const hasColumn = columns.some((c) => c.name === "missionsMonthKey");
+  if (!hasColumn) {
+    db.exec("ALTER TABLE users ADD COLUMN missionsMonthKey TEXT");
+    console.log("[db] Added missionsMonthKey column to users table");
+  }
+}
+
+ensureMissionsMonthKeyColumn();
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS shop_items (
     id TEXT PRIMARY KEY,
@@ -113,8 +129,8 @@ function migrateFromJsonIfNeeded() {
   if (ids.length === 0) return;
 
   const insert = db.prepare(`
-    INSERT INTO users (id, username, firstName, tickets, rpPoints, forcedPrizeId, history, missionsWeekKey, missionsSelected, missionsConfirmed)
-    VALUES (@id, @username, @firstName, @tickets, @rpPoints, @forcedPrizeId, @history, @missionsWeekKey, @missionsSelected, @missionsConfirmed)
+    INSERT INTO users (id, username, firstName, tickets, rpPoints, forcedPrizeId, history, missionsWeekKey, missionsMonthKey, missionsSelected, missionsConfirmed)
+    VALUES (@id, @username, @firstName, @tickets, @rpPoints, @forcedPrizeId, @history, @missionsWeekKey, @missionsMonthKey, @missionsSelected, @missionsConfirmed)
   `);
 
   const insertMany = db.transaction((rows) => {
@@ -133,6 +149,7 @@ function migrateFromJsonIfNeeded() {
       forcedPrizeId: u.forcedPrizeId ?? null,
       history: JSON.stringify(u.history || []),
       missionsWeekKey: missions.weekKey || getCurrentWeekKey(),
+      missionsMonthKey: missions.monthKey || getCurrentMonthKey(),
       missionsSelected: JSON.stringify(missions.selected || {}),
       missionsConfirmed: JSON.stringify(missions.confirmed || {}),
     };
@@ -206,8 +223,8 @@ syncMissionSeedItems();
 const stmts = {
   getById: db.prepare("SELECT * FROM users WHERE id = ?"),
   insertNew: db.prepare(`
-    INSERT INTO users (id, username, firstName, tickets, rpPoints, forcedPrizeId, history, missionsDailyKey, missionsWeekKey, missionsSelected, missionsConfirmed, clubGgId)
-    VALUES (@id, @username, @firstName, @tickets, @rpPoints, @forcedPrizeId, @history, @missionsDailyKey, @missionsWeekKey, @missionsSelected, @missionsConfirmed, @clubGgId)
+    INSERT INTO users (id, username, firstName, tickets, rpPoints, forcedPrizeId, history, missionsDailyKey, missionsWeekKey, missionsMonthKey, missionsSelected, missionsConfirmed, clubGgId)
+    VALUES (@id, @username, @firstName, @tickets, @rpPoints, @forcedPrizeId, @history, @missionsDailyKey, @missionsWeekKey, @missionsMonthKey, @missionsSelected, @missionsConfirmed, @clubGgId)
   `),
   updateProfile: db.prepare("UPDATE users SET username = @username, firstName = @firstName WHERE id = @id"),
   updateTickets: db.prepare("UPDATE users SET tickets = @tickets WHERE id = @id"),
@@ -217,7 +234,7 @@ const stmts = {
     "UPDATE users SET tickets = @tickets, forcedPrizeId = NULL, rpPoints = @rpPoints, history = @history WHERE id = @id"
   ),
   updateMissions: db.prepare(
-    "UPDATE users SET missionsDailyKey = @missionsDailyKey, missionsWeekKey = @missionsWeekKey, missionsSelected = @missionsSelected, missionsConfirmed = @missionsConfirmed WHERE id = @id"
+    "UPDATE users SET missionsDailyKey = @missionsDailyKey, missionsWeekKey = @missionsWeekKey, missionsMonthKey = @missionsMonthKey, missionsSelected = @missionsSelected, missionsConfirmed = @missionsConfirmed WHERE id = @id"
   ),
   updateClubGgId: db.prepare("UPDATE users SET clubGgId = @clubGgId WHERE id = @id"),
   getAllShopItems: db.prepare(
@@ -268,6 +285,7 @@ function rowToUser(row) {
     missions: {
       dailyKey: row.missionsDailyKey || null,
       weekKey: row.missionsWeekKey,
+      monthKey: row.missionsMonthKey || null,
       selected: JSON.parse(row.missionsSelected),
       confirmed: JSON.parse(row.missionsConfirmed),
     },
@@ -283,6 +301,7 @@ function getUser(telegramId) {
   if (!row) {
     const dayKey = getCurrentDayKey();
     const weekKey = getCurrentWeekKey();
+    const monthKey = getCurrentMonthKey();
     stmts.insertNew.run({
       id,
       username: null,
@@ -293,6 +312,7 @@ function getUser(telegramId) {
       history: "[]",
       missionsDailyKey: dayKey,
       missionsWeekKey: weekKey,
+      missionsMonthKey: monthKey,
       missionsSelected: "{}",
       missionsConfirmed: "{}",
       clubGgId: null,
@@ -355,6 +375,9 @@ function getMissionPeriod(mission) {
   if (!mission) return "weekly";
   if (mission.sectionId === "daily" || String(mission.id).startsWith("daily-")) return "daily";
   if (mission.sectionId === "weekly" || String(mission.id).startsWith("weekly-")) return "weekly";
+  // "Активність" sections - RP tab uses sectionId "activity", Keys tab uses
+  // sectionId "streak" - reset once a month instead of weekly.
+  if (mission.sectionId === "activity" || mission.sectionId === "streak") return "monthly";
   return "weekly";
 }
 
@@ -370,6 +393,7 @@ function filterMissionsByPeriod(source, periodToDrop) {
 function ensureCurrentMissionPeriods(user) {
   const currentDay = getCurrentDayKey();
   const currentWeek = getCurrentWeekKey();
+  const currentMonth = getCurrentMonthKey();
   if (user.missions.dailyKey !== currentDay) {
     user.missions.selected = filterMissionsByPeriod(user.missions.selected, "daily");
     user.missions.confirmed = filterMissionsByPeriod(user.missions.confirmed, "daily");
@@ -380,6 +404,11 @@ function ensureCurrentMissionPeriods(user) {
     user.missions.confirmed = filterMissionsByPeriod(user.missions.confirmed, "weekly");
     user.missions.weekKey = currentWeek;
   }
+  if (user.missions.monthKey !== currentMonth) {
+    user.missions.selected = filterMissionsByPeriod(user.missions.selected, "monthly");
+    user.missions.confirmed = filterMissionsByPeriod(user.missions.confirmed, "monthly");
+    user.missions.monthKey = currentMonth;
+  }
   return user;
 }
 
@@ -388,6 +417,7 @@ function persistMissions(user) {
     id: user.id,
     missionsDailyKey: user.missions.dailyKey || getCurrentDayKey(),
     missionsWeekKey: user.missions.weekKey,
+    missionsMonthKey: user.missions.monthKey || getCurrentMonthKey(),
     missionsSelected: JSON.stringify(user.missions.selected),
     missionsConfirmed: JSON.stringify(user.missions.confirmed),
   });
@@ -402,6 +432,7 @@ function getUserMissions(telegramId) {
     resetAt: {
       daily: getNextDailyReset().toISOString(),
       weekly: getNextWeeklyReset().toISOString(),
+      monthly: getNextMonthlyReset().toISOString(),
     },
   };
 }

@@ -80,10 +80,25 @@ function getNextWeeklyReset(date = new Date()) {
   return currentWeekStart;
 }
 
+// Month key like "2026-07" - used to know when a user's "monthly" mission
+// progress (currently: the "Активність" / "streak" sections) needs to be
+// wiped and started fresh.
+function getCurrentMonthKey(date = new Date()) {
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
+}
+
+function getNextMonthlyReset(date = new Date()) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1));
+}
+
 module.exports = {
   MISSION_SEED,
   getCurrentDayKey,
   getCurrentWeekKey,
+  getCurrentMonthKey,
   getNextDailyReset,
   getNextWeeklyReset,
+  getNextMonthlyReset,
 };
