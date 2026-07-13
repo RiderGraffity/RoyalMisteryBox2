@@ -36,7 +36,8 @@ db.exec(`
     missionsSelected TEXT NOT NULL DEFAULT '{}',
     missionsConfirmed TEXT NOT NULL DEFAULT '{}',
     clubGgId TEXT,
-    boxesOpened INTEGER NOT NULL DEFAULT 0
+    boxesOpened INTEGER NOT NULL DEFAULT 0,
+    totalRpEarned INTEGER NOT NULL DEFAULT 0
   );
 `);
 
@@ -92,6 +93,22 @@ function ensureBoxesOpenedColumn() {
 }
 
 ensureBoxesOpenedColumn();
+
+// Older databases won't have this column yet. The leaderboard now ranks by
+// lifetime RP earned (so spending RP in the shop doesn't hurt your rank)
+// instead of the spendable rpPoints balance. Back-fill it from each user's
+// current rpPoints so existing players don't drop to the bottom of the top.
+function ensureTotalRpEarnedColumn() {
+  const columns = db.prepare("PRAGMA table_info(users)").all();
+  const hasColumn = columns.some((c) => c.name === "totalRpEarned");
+  if (!hasColumn) {
+    db.exec("ALTER TABLE users ADD COLUMN totalRpEarned INTEGER NOT NULL DEFAULT 0");
+    db.exec("UPDATE users SET totalRpEarned = rpPoints WHERE totalRpEarned = 0");
+    console.log("[db] Added totalRpEarned column to users table (back-filled from rpPoints)");
+  }
+}
+
+ensureTotalRpEarnedColumn();
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS shop_items (
@@ -239,15 +256,18 @@ syncMissionSeedItems();
 const stmts = {
   getById: db.prepare("SELECT * FROM users WHERE id = ?"),
   insertNew: db.prepare(`
-    INSERT INTO users (id, username, firstName, tickets, rpPoints, forcedPrizeId, history, missionsDailyKey, missionsWeekKey, missionsMonthKey, missionsSelected, missionsConfirmed, clubGgId, boxesOpened)
-    VALUES (@id, @username, @firstName, @tickets, @rpPoints, @forcedPrizeId, @history, @missionsDailyKey, @missionsWeekKey, @missionsMonthKey, @missionsSelected, @missionsConfirmed, @clubGgId, @boxesOpened)
+    INSERT INTO users (id, username, firstName, tickets, rpPoints, forcedPrizeId, history, missionsDailyKey, missionsWeekKey, missionsMonthKey, missionsSelected, missionsConfirmed, clubGgId, boxesOpened, totalRpEarned)
+    VALUES (@id, @username, @firstName, @tickets, @rpPoints, @forcedPrizeId, @history, @missionsDailyKey, @missionsWeekKey, @missionsMonthKey, @missionsSelected, @missionsConfirmed, @clubGgId, @boxesOpened, @totalRpEarned)
   `),
   updateProfile: db.prepare("UPDATE users SET username = @username, firstName = @firstName WHERE id = @id"),
   updateTickets: db.prepare("UPDATE users SET tickets = @tickets WHERE id = @id"),
   updateRp: db.prepare("UPDATE users SET rpPoints = @rpPoints WHERE id = @id"),
+  updateRpAndTotal: db.prepare(
+    "UPDATE users SET rpPoints = @rpPoints, totalRpEarned = @totalRpEarned WHERE id = @id"
+  ),
   updateForcedPrize: db.prepare("UPDATE users SET forcedPrizeId = @forcedPrizeId WHERE id = @id"),
   updateAfterPrize: db.prepare(
-    "UPDATE users SET tickets = @tickets, forcedPrizeId = NULL, rpPoints = @rpPoints, history = @history, boxesOpened = @boxesOpened WHERE id = @id"
+    "UPDATE users SET tickets = @tickets, forcedPrizeId = NULL, rpPoints = @rpPoints, history = @history, boxesOpened = @boxesOpened, totalRpEarned = @totalRpEarned WHERE id = @id"
   ),
   updateAfterPurchase: db.prepare(
     "UPDATE users SET rpPoints = @rpPoints, history = @history WHERE id = @id"
@@ -281,9 +301,9 @@ const stmts = {
     WHERE id = @id
   `),
   getLeaderboard: db.prepare(`
-    SELECT id, username, firstName, rpPoints, clubGgId
+    SELECT id, username, firstName, rpPoints, totalRpEarned, clubGgId
     FROM users
-    ORDER BY rpPoints DESC, id ASC
+    ORDER BY totalRpEarned DESC, id ASC
     LIMIT ?
   `),
 };
@@ -301,6 +321,7 @@ function rowToUser(row) {
     forcedPrizeId: row.forcedPrizeId,
     clubGgId: row.clubGgId || null,
     boxesOpened: row.boxesOpened || 0,
+    totalRpEarned: row.totalRpEarned || 0,
     history: JSON.parse(row.history),
     missions: {
       dailyKey: row.missionsDailyKey || null,
@@ -337,6 +358,7 @@ function getUser(telegramId) {
       missionsConfirmed: "{}",
       clubGgId: null,
       boxesOpened: 0,
+      totalRpEarned: 0,
     });
     row = stmts.getById.get(id);
   }
@@ -381,6 +403,7 @@ function consumeTicketAndRecordPrize(telegramId, prize) {
   user.tickets -= 1;
   user.forcedPrizeId = null;
   user.rpPoints += prize.rpValue || 0;
+  user.totalRpEarned += prize.rpValue || 0;
   user.history.unshift({ type: "prize", prizeId: prize.id, name: prize.name, date: new Date().toISOString() });
   user.history = user.history.slice(0, 50);
   user.boxesOpened += 1;
@@ -390,6 +413,7 @@ function consumeTicketAndRecordPrize(telegramId, prize) {
     rpPoints: user.rpPoints,
     history: JSON.stringify(user.history),
     boxesOpened: user.boxesOpened,
+    totalRpEarned: user.totalRpEarned,
   });
   return { user, ok: true };
 }
@@ -495,7 +519,8 @@ function setMissionConfirmed(telegramId, missionId, confirmed) {
         keysCredited = amount;
       } else {
         user.rpPoints += amount;
-        stmts.updateRp.run({ id: user.id, rpPoints: user.rpPoints });
+        user.totalRpEarned += amount;
+        stmts.updateRpAndTotal.run({ id: user.id, rpPoints: user.rpPoints, totalRpEarned: user.totalRpEarned });
       }
     }
   } else if (!confirmed && wasConfirmed) {
@@ -506,7 +531,8 @@ function setMissionConfirmed(telegramId, missionId, confirmed) {
         stmts.updateTickets.run({ id: user.id, tickets: user.tickets });
       } else {
         user.rpPoints = Math.max(0, user.rpPoints - amount);
-        stmts.updateRp.run({ id: user.id, rpPoints: user.rpPoints });
+        user.totalRpEarned = Math.max(0, user.totalRpEarned - amount);
+        stmts.updateRpAndTotal.run({ id: user.id, rpPoints: user.rpPoints, totalRpEarned: user.totalRpEarned });
       }
     }
   }
@@ -720,9 +746,9 @@ function getLeaderboard(limit = 20) {
   return stmts.getLeaderboard.all(Math.max(1, Math.min(100, Number(limit) || 20))).map((row, index) => ({
     rank: index + 1,
     id: row.id,
-    name: row.username ? `@${row.username}` : row.firstName || `Player ${row.id.slice(-4)}`,
+    name: row.firstName || `Гравець ${row.id.slice(-4)}`,
     clubGgId: row.clubGgId || null,
-    score: row.rpPoints,
+    score: row.totalRpEarned,
   }));
 }
 

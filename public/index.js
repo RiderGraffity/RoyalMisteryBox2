@@ -706,13 +706,13 @@ function renderMorePage() {
     body = `<div class="mb-history-list">` + history.map((h, i) => {
       if (h.type === "purchase") {
         return `
-          <div class="mb-history-row" style="animation-delay:${i * 0.05}s;">
+          <div class="mb-history-row" style="animation-delay:${i * 0.05}s;background:rgba(139,79,224,0.08);">
             <div class="mb-history-icon" style="border-color:${COLORS.purple};">
               ${icon("shopping-bag", 18, COLORS.purple)}
             </div>
             <div class="mb-history-info">
-              <div class="mb-history-name">Куплено: ${h.item.name}</div>
-              <div class="mb-history-date">${h.date} · −${h.item.price} RP</div>
+              <div class="mb-history-name" style="color:${COLORS.purple};">Куплено: ${h.item.name}</div>
+              <div class="mb-history-date" style="color:${COLORS.purple};opacity:0.75;">${h.date} · −${h.item.price} RP</div>
             </div>
           </div>
         `;
