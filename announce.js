@@ -1,4 +1,32 @@
 const path = require("path");
+const fs = require("fs");
+const os = require("os");
+
+// Railway's base image ships with zero fonts installed. Sharp/librsvg needs
+// a font via fontconfig to draw any SVG <text>, and without one it silently
+// renders empty boxes instead of the winner's nickname (see the fonts.conf
+// setup below). Bundling our own font and pointing FONTCONFIG_PATH at it
+// guarantees the nickname always renders, on any host, regardless of what
+// system fonts (if any) happen to be present. This MUST run before "sharp"
+// is required below, since libvips/librsvg reads FONTCONFIG_PATH on init.
+const BUNDLED_FONTS_DIR = path.join(__dirname, "assets/fonts");
+const FONTCONFIG_DIR = path.join(os.tmpdir(), "royal-miniapp-fontconfig");
+try {
+  fs.mkdirSync(FONTCONFIG_DIR, { recursive: true });
+  fs.writeFileSync(
+    path.join(FONTCONFIG_DIR, "fonts.conf"),
+    `<?xml version="1.0"?>\n` +
+      `<!DOCTYPE fontconfig SYSTEM "fonts.dtd">\n` +
+      `<fontconfig>\n` +
+      `  <dir>${BUNDLED_FONTS_DIR}</dir>\n` +
+      `  <cachedir>${path.join(FONTCONFIG_DIR, "cache")}</cachedir>\n` +
+      `</fontconfig>\n`
+  );
+  process.env.FONTCONFIG_PATH = FONTCONFIG_DIR;
+} catch (e) {
+  console.error("Failed to set up bundled font for announcements:", e);
+}
+
 const sharp = require("sharp");
 
 const { sendTelegramPhoto, WIN_CHAT_ID } = require("./telegram");
@@ -58,8 +86,8 @@ async function renderAnnouncementImage(displayName) {
   const svg = `
     <svg width="1280" height="853" xmlns="http://www.w3.org/2000/svg">
       <style>
-        .lbl { font-family: Arial, sans-serif; font-weight: 700; font-size: 22px; fill: #C9A6FF; letter-spacing: 2px; }
-        .nick { font-family: Arial, sans-serif; font-weight: 800; font-size: ${nickFontSize}px; fill: #FFDE7A; }
+        .lbl { font-family: "DejaVu Sans"; font-weight: bold; font-size: 22px; fill: #C9A6FF; letter-spacing: 2px; }
+        .nick { font-family: "DejaVu Sans"; font-weight: bold; font-size: ${nickFontSize}px; fill: #FFDE7A; }
       </style>
       <text x="${centerX}" y="${centerY - 8}" text-anchor="middle" class="lbl">ПЕРЕМОЖЕЦЬ</text>
       <text x="${centerX}" y="${centerY + 45}" text-anchor="middle" class="nick">${safeName}</text>
