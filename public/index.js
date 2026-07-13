@@ -20,13 +20,13 @@ const RARITIES = {
 };
 
 const PRIZE_POOL = [
-  { id: "p1", name: "💰 Квиток до 100", rarity: "veryOften", icon: "ticket", rpValue: 100 },
-  { id: "p2", name: "💰 75 фішок", rarity: "veryOften", icon: "coins", rpValue: 75 },
-  { id: "p3", name: "💰 100 фішок", rarity: "veryOften", icon: "coins", rpValue: 100 },
-  { id: "p4", name: "💰 250 фішок", rarity: "veryOften", icon: "coins", rpValue: 250 },
-  { id: "p5", name: "💰 500 фішок", rarity: "rare", icon: "gem", rpValue: 500 },
-  { id: "p6", name: "💰 1 000 фішок", rarity: "veryRare", icon: "gem", rpValue: 1000 },
-  { id: "p7", name: "🎟 Турнірний квиток 300/500", rarity: "rare", icon: "award", rpValue: 500 },
+  { id: "p1", name: "💰 Квиток до 100", rarity: "veryOften", icon: "ticket", chipValue: 100 },
+  { id: "p2", name: "💰 75 фішок", rarity: "veryOften", icon: "coins", chipValue: 75 },
+  { id: "p3", name: "💰 100 фішок", rarity: "veryOften", icon: "coins", chipValue: 100 },
+  { id: "p4", name: "💰 250 фішок", rarity: "veryOften", icon: "coins", chipValue: 250 },
+  { id: "p5", name: "💰 500 фішок", rarity: "rare", icon: "gem", chipValue: 500 },
+  { id: "p6", name: "💰 1 000 фішок", rarity: "veryRare", icon: "gem", chipValue: 1000 },
+  { id: "p7", name: "🎟 Турнірний квиток 300/500", rarity: "rare", icon: "award", chipValue: 500 },
   { id: "p8", name: "🎁 +50 очок", rarity: "medium", icon: "gift", rpValue: 50 },
   { id: "p9", name: "👑 +100 очок", rarity: "medium", icon: "crown", rpValue: 100 },
 ];
@@ -86,6 +86,7 @@ async function syncWithServer() {
     if (data.success) {
       state.selectedMissions = new Set(Object.keys(data.missions.selected || {}));
       state.confirmedMissions = new Set(Object.keys(data.missions.confirmed || {}));
+      state.missionResetAt = data.missions.resetAt || state.missionResetAt;
     }
   } catch (e) {
     console.warn("Could not load missions state:", e.message);
@@ -110,6 +111,16 @@ async function syncWithServer() {
     }
   } catch (e) {
     console.warn("Could not load missions catalog, using local fallback:", e.message);
+  }
+
+  try {
+    const res = await fetch("/api/top");
+    const data = await res.json();
+    if (data.success && Array.isArray(data.leaders)) {
+      state.topLeaders = data.leaders;
+    }
+  } catch (e) {
+    console.warn("Could not load leaderboard:", e.message);
   }
 
   try {
@@ -304,6 +315,8 @@ const state = {
   missionsTab: "rp",
   shopSections: DEFAULT_SHOP_SECTIONS,
   missionSections: { rp: DEFAULT_RP_MISSION_SECTIONS, keys: DEFAULT_KEY_MISSION_SECTIONS },
+  missionResetAt: { daily: null, weekly: null },
+  topLeaders: [],
   selectedMissions: new Set(),
   confirmedMissions: new Set(),
   isAdmin: false,
@@ -497,18 +510,33 @@ function renderMissionCard(item, isBonus, missionId) {
 
 function renderMissionSection(section) {
   const cards = section.items
-    .map((it, i) => renderMissionCard(it, false, `${section.id}-${i}`))
+    .map((it, i) => renderMissionCard(it, false, it.id || `${section.id}-${i}`))
     .join("");
+  const resetType = section.id === "daily" ? "daily" : (section.id === "weekly" ? "weekly" : null);
+  const resetBadge = resetType ? `<span class="mb-mission-reset">${formatResetTimer(resetType)}</span>` : "";
   const bonus = section.bonus ? renderMissionCard(section.bonus, true) : "";
   return `
     <div class="mb-mission-section">
       <div class="mb-mission-section-header">
         ${icon(section.icon, 17, "#E8BE4F")}
         <h3 class="mb-mission-section-title">${section.title}</h3>
+        ${resetBadge}
       </div>
       <div class="mb-mission-list">${cards}${bonus}</div>
     </div>
   `;
+}
+
+function formatResetTimer(type) {
+  const target = state.missionResetAt && state.missionResetAt[type] ? new Date(state.missionResetAt[type]).getTime() : 0;
+  if (!target) return "";
+  const ms = Math.max(0, target - Date.now());
+  const totalMinutes = Math.ceil(ms / 60000);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  if (days > 0) return `${days}d ${hours}h`;
+  return `${hours}h ${minutes}m`;
 }
 
 function renderMissionsPage() {
@@ -544,7 +572,7 @@ function renderShopItemCard(item, sectionSubtitle) {
       ${sectionSubtitle ? `<div class="mb-shop-item-sub">${sectionSubtitle}</div>` : ""}
       <div class="mb-shop-item-value">${item.label}</div>
       <div class="mb-shop-item-price">${icon("gem", 12, "#8B4FE0")} ${item.price}</div>
-      <button class="mb-shop-buy-btn" data-action="buy" data-price="${item.price}" data-label="${item.label}" ${affordable ? "" : "disabled"}>
+      <button class="mb-shop-buy-btn" data-action="buy" data-id="${item.id}" data-price="${item.price}" data-label="${item.label}" ${affordable ? "" : "disabled"}>
         Купити
       </button>
     </div>
@@ -584,13 +612,7 @@ function renderShopPage() {
 }
 
 function renderTopPage() {
-  const leaders = [
-    { name: "PokerKing", score: 25680 },
-    { name: "AceHunter", score: 21120 },
-    { name: "LuckyQueen", score: 18990 },
-    { name: "ChipMaster", score: 15230 },
-    { name: "GoldRush", score: 12040 },
-  ];
+  const leaders = state.topLeaders || [];
   const rows = leaders.map((l, i) => `
     <div class="mb-leader-row" style="animation-delay:${i * 0.05}s;">
       <div class="mb-leader-rank">${i + 1}</div>
@@ -599,13 +621,14 @@ function renderTopPage() {
       <div class="mb-leader-score">${icon("coins", 13, COLORS.goldDeep)} ${l.score.toLocaleString("ru-RU")} RP</div>
     </div>
   `).join("");
+  const body = rows || `<div class="mb-empty">РџРѕРєРё С‰Рѕ РЅРµРјР°С” РіСЂР°РІС†С–РІ Р· RP Points</div>`;
   return `
     <div class="mb-page mb-subpage">
       <div class="mb-subpage-header">
         <h2 class="mb-subpage-title">Топ гравців</h2>
         <p class="mb-subpage-sub">Рейтинг за Royal Points (RP)</p>
       </div>
-      <div class="mb-leader-list">${rows}</div>
+      <div class="mb-leader-list">${body}</div>
     </div>
   `;
 }
@@ -743,6 +766,9 @@ function renderConfetti() {
 
 function renderPrizeModal(prize) {
   const rarity = RARITIES[prize.rarity];
+  const prizeSub = prize.chipValue
+    ? "Виграш відправлено адміністраторам для зарахування фішок"
+    : `+${(prize.rpValue || 0).toLocaleString("ru-RU")} RP зараховано на твій рахунок`;
   return `
     <div class="mb-modal-overlay">
       ${renderConfetti()}
@@ -751,7 +777,7 @@ function renderPrizeModal(prize) {
         <div class="mb-modal-icon-wrap">${icon(prize.icon, 50, rarity.color, 'stroke-width="1.6"')}</div>
         <div class="mb-modal-rarity" style="color:${rarity.color};">${rarity.label}</div>
         <div class="mb-modal-prize-name">${prize.name}</div>
-        <p class="mb-modal-sub">+${(prize.rpValue || 0).toLocaleString("ru-RU")} RP зараховано на твій рахунок</p>
+        <p class="mb-modal-sub">${prizeSub}</p>
         <div class="mb-modal-actions">
           <button class="mb-btn-primary" data-action="open-another">Відкрити ще</button>
           <button class="mb-btn-ghost" data-action="close-modal">Закрити</button>
@@ -937,16 +963,23 @@ function handleSelectMission(missionId, label) {
   });
 }
 
-function handleBuy(price, label) {
+async function handleBuy(itemId, price, label) {
   if (state.rpPoints < price) {
     haptic("error");
     showToast("Недостатньо очок");
     return;
   }
-  state.rpPoints -= price;
-  haptic("success");
-  showToast(`Придбано: ${label}`);
-  render();
+  try {
+    const data = await apiPost("/api/shop/buy", { initData: getInitData(), itemId });
+    state.rpPoints = data.user.rpPoints;
+    state.balance = data.user.rpPoints;
+    haptic("success");
+    showToast(`Придбано: ${label}`);
+    render();
+  } catch (e) {
+    haptic("error");
+    showToast(e.message === "insufficient_points" ? "Недостатньо очок" : "Покупка не вдалася");
+  }
 }
 
 function openAdminPanel() {
@@ -985,7 +1018,7 @@ function attachHandlers() {
     el.onclick = () => { state.clubGgError = ""; state.showClubGgModal = true; render(); };
   });
   document.querySelectorAll('[data-action="buy"]').forEach(el => {
-    el.onclick = () => handleBuy(parseInt(el.dataset.price, 10), el.dataset.label);
+    el.onclick = () => handleBuy(el.dataset.id, parseInt(el.dataset.price, 10), el.dataset.label);
   });
   document.querySelectorAll('[data-action="missions-tab"]').forEach(el => {
     el.onclick = () => { state.missionsTab = el.dataset.tab; render(); };
@@ -1017,4 +1050,7 @@ function attachHandlers() {
   render();
   await syncWithServer();
   render();
+  setInterval(() => {
+    if (state.page === "missions") render();
+  }, 60000);
 })();

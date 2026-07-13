@@ -6,7 +6,13 @@ const path = require("path");
 
 const { PRIZE_POOL, getPrizeById, rollRandomPrize } = require("./prizes");
 const db = require("./db");
-const { verifyInitData, isAdmin, notifyAdminsOfWin, notifyUserKeysCredited } = require("./telegram");
+const {
+  verifyInitData,
+  isAdmin,
+  notifyAdminsOfWin,
+  notifyAdminsOfPurchase,
+  notifyUserKeysCredited,
+} = require("./telegram");
 const { announceMysteryBoxWin } = require("./announce");
 
 const app = express();
@@ -94,7 +100,9 @@ app.post("/api/open-box", async (req, res) => {
   const displayName = tgUser.username
     ? `@${tgUser.username}`
     : [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") || "Гравець";
-  announceMysteryBoxWin({ displayName, prizeLabel: prize.name }).catch((e) => console.error(e));
+  if (!prize.chipValue) {
+    announceMysteryBoxWin({ displayName, prizeLabel: prize.name }).catch((e) => console.error(e));
+  }
 
   res.json({
     success: true,
@@ -139,6 +147,40 @@ app.get("/api/missions/mine", (req, res) => {
 /* ------------------------------------------------------------------ */
 app.get("/api/shop", (req, res) => {
   res.json({ success: true, sections: db.getShopSections({ onlyActive: true }) });
+});
+
+app.post("/api/shop/buy", async (req, res) => {
+  const tgUser = verifyInitData(req.body.initData);
+  if (!tgUser) {
+    return res.status(401).json({ success: false, error: "invalid_init_data" });
+  }
+
+  const itemId = String(req.body.itemId || "").trim();
+  if (!itemId) {
+    return res.status(400).json({ success: false, error: "missing_product" });
+  }
+
+  const result = db.purchaseShopItem(tgUser.id, itemId);
+  if (!result.ok) {
+    return res.status(400).json({ success: false, error: result.error, user: result.user });
+  }
+
+  notifyAdminsOfPurchase(tgUser, result.item, result.user.clubGgId).catch((e) => console.error(e));
+
+  res.json({
+    success: true,
+    item: result.item,
+    user: {
+      id: result.user.id,
+      rpPoints: result.user.rpPoints,
+      tickets: result.user.tickets,
+      clubGgId: result.user.clubGgId,
+    },
+  });
+});
+
+app.get("/api/top", (req, res) => {
+  res.json({ success: true, leaders: db.getLeaderboard(50) });
 });
 
 /* ------------------------------------------------------------------ */

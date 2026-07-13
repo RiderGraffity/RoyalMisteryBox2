@@ -22,6 +22,7 @@ const MISSION_SEED = [
   { id: "daily-1", category: "rp", sectionId: "daily", sectionTitle: "Щоденні місії", sectionIcon: "target", sectionOrder: 1, itemOrder: 1, isBonus: 0, label: "Зіграти 300 кеш-рук", rewardAmount: 10, rewardLabel: "RP" },
   { id: "daily-2", category: "rp", sectionId: "daily", sectionTitle: "Щоденні місії", sectionIcon: "target", sectionOrder: 1, itemOrder: 2, isBonus: 0, label: "Зіграти 2 MTT", rewardAmount: 5, rewardLabel: "RP" },
   { id: "daily-3", category: "rp", sectionId: "daily", sectionTitle: "Щоденні місії", sectionIcon: "target", sectionOrder: 1, itemOrder: 3, isBonus: 0, label: "Потрапити в ITM", rewardAmount: 5, rewardLabel: "RP" },
+  { id: "daily-4", category: "keys", sectionId: "daily", sectionTitle: "Щоденні місії", sectionIcon: "target", sectionOrder: 0, itemOrder: 4, isBonus: 0, label: "Депозит від 500 грн", rewardAmount: 1, rewardLabel: "1 ключ" },
   { id: "daily-bonus", category: "rp", sectionId: "daily", sectionTitle: "Щоденні місії", sectionIcon: "target", sectionOrder: 1, itemOrder: 999, isBonus: 1, label: "Виконати всі місії", rewardAmount: 10, rewardLabel: "RP" },
 
   // --- RP: Тижневі місії ----------------------------------------------
@@ -56,12 +57,12 @@ const MISSION_SEED = [
   { id: "streak-1", category: "keys", sectionId: "streak", sectionTitle: "Активність", sectionIcon: "flame", sectionOrder: 4, itemOrder: 1, isBonus: 0, label: "30 активних днів поспіль", rewardAmount: 2, rewardLabel: "2 ключі" },
 ];
 
-/**
- * Missions reset every week, starting Sunday. We key each user's mission
- * progress by the date (UTC, YYYY-MM-DD) of the most recent Sunday, so the
- * very first read/write after a new Sunday starts automatically wipes the
- * previous week's selections and confirmations.
- */
+function getCurrentDayKey(date = new Date()) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()))
+    .toISOString()
+    .slice(0, 10);
+}
+
 function getCurrentWeekKey(date = new Date()) {
   const d = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
   const day = d.getUTCDay(); // 0 = Sunday
@@ -69,7 +70,20 @@ function getCurrentWeekKey(date = new Date()) {
   return d.toISOString().slice(0, 10);
 }
 
+function getNextDailyReset(date = new Date()) {
+  return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() + 1));
+}
+
+function getNextWeeklyReset(date = new Date()) {
+  const currentWeekStart = new Date(`${getCurrentWeekKey(date)}T00:00:00.000Z`);
+  currentWeekStart.setUTCDate(currentWeekStart.getUTCDate() + 7);
+  return currentWeekStart;
+}
+
 module.exports = {
   MISSION_SEED,
+  getCurrentDayKey,
   getCurrentWeekKey,
+  getNextDailyReset,
+  getNextWeeklyReset,
 };

@@ -5,6 +5,7 @@ const ADMIN_IDS = (process.env.ADMIN_IDS || "")
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
+const WIN_CHAT_ID = process.env.WIN_CHAT_ID || "";
 
 /**
  * Verifies the `initData` string that Telegram.WebApp gives to the front-end.
@@ -107,6 +108,21 @@ async function notifyAdminsOfWin(user, prize, clubGgId) {
     `ClubGG ID: <code>${escapeHtml(clubGgId || "не вказано")}</code>\n` +
     `Виграш: <b>${escapeHtml(prize.name)}</b>`;
 
+  const recipients = prize.chipValue && WIN_CHAT_ID ? [WIN_CHAT_ID] : ADMIN_IDS;
+  await Promise.all(recipients.map((chatId) => sendTelegramMessage(chatId, text)));
+}
+
+async function notifyAdminsOfPurchase(user, item, clubGgId) {
+  const displayName = [user.first_name, user.last_name].filter(Boolean).join(" ") || user.firstName || "Гравець";
+  const usernamePart = user.username ? `@${user.username}` : "без username";
+  const text =
+    `🛒 <b>Новая покупка в магазине</b>\n` +
+    `Кто купил: <b>${escapeHtml(displayName)}</b> (${escapeHtml(usernamePart)})\n` +
+    `Telegram ID: <code>${user.id}</code>\n` +
+    `ClubGG ID: <code>${escapeHtml(clubGgId || "не указан")}</code>\n` +
+    `Что купил: <b>${escapeHtml(item.label)}</b>\n` +
+    `Стоимость: <b>${item.price} RP</b>`;
+
   await Promise.all(ADMIN_IDS.map((adminId) => sendTelegramMessage(adminId, text)));
 }
 
@@ -141,10 +157,12 @@ function escapeHtml(str) {
 module.exports = {
   ADMIN_IDS,
   BOT_TOKEN,
+  WIN_CHAT_ID,
   verifyInitData,
   isAdmin,
   sendTelegramMessage,
   sendTelegramPhoto,
   notifyAdminsOfWin,
+  notifyAdminsOfPurchase,
   notifyUserKeysCredited,
 };

@@ -344,13 +344,18 @@ html, body { margin: 0; padding: 0; }
 .mb-mission-section { margin-bottom: 20px; }
 .mb-mission-section:last-child { margin-bottom: 4px; }
 .mb-mission-section-header {
-  display: flex; align-items: center; gap: 8px; margin: 0 0 10px;
-  color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,0.5);
-}
+    display: flex; align-items: center; gap: 8px; margin: 0 0 10px;
+    color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,0.5);
+  }
 .mb-mission-section-title {
-  font-family: 'Cinzel', serif; font-size: 14.5px; font-weight: 700;
-  margin: 0; letter-spacing: 0.2px;
-}
+    font-family: 'Cinzel', serif; font-size: 14.5px; font-weight: 700;
+    margin: 0; letter-spacing: 0.2px;
+  }
+  .mb-mission-reset {
+    margin-left: auto; flex-shrink: 0;
+    font-size: 11px; font-weight: 800; color: #1E1A33; text-shadow: none;
+    background: rgba(255,255,255,0.86); border-radius: 999px; padding: 4px 8px;
+  }
 
 .mb-mission-list { display: flex; flex-direction: column; gap: 8px; }
 .mb-mission-card {

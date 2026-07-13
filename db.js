@@ -2,7 +2,13 @@ const fs = require("fs");
 const path = require("path");
 const Database = require("better-sqlite3");
 
-const { getCurrentWeekKey, MISSION_SEED } = require("./missions");
+const {
+  getCurrentDayKey,
+  getCurrentWeekKey,
+  getNextDailyReset,
+  getNextWeeklyReset,
+  MISSION_SEED,
+} = require("./missions");
 const { SHOP_SEED } = require("./products");
 
 const DB_PATH = path.join(__dirname, "db.sqlite");
@@ -23,6 +29,7 @@ db.exec(`
     rpPoints INTEGER NOT NULL DEFAULT 0,
     forcedPrizeId TEXT,
     history TEXT NOT NULL DEFAULT '[]',
+    missionsDailyKey TEXT,
     missionsWeekKey TEXT,
     missionsSelected TEXT NOT NULL DEFAULT '{}',
     missionsConfirmed TEXT NOT NULL DEFAULT '{}',
@@ -42,6 +49,17 @@ function ensureClubGgIdColumn() {
 }
 
 ensureClubGgIdColumn();
+
+function ensureMissionsDailyKeyColumn() {
+  const columns = db.prepare("PRAGMA table_info(users)").all();
+  const hasColumn = columns.some((c) => c.name === "missionsDailyKey");
+  if (!hasColumn) {
+    db.exec("ALTER TABLE users ADD COLUMN missionsDailyKey TEXT");
+    console.log("[db] Added missionsDailyKey column to users table");
+  }
+}
+
+ensureMissionsDailyKeyColumn();
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS shop_items (
@@ -166,14 +184,30 @@ function seedMissionItemsIfNeeded() {
 
 seedMissionItemsIfNeeded();
 
+function syncMissionSeedItems() {
+  const insert = db.prepare(`
+    INSERT INTO mission_items (id, category, sectionId, sectionTitle, sectionIcon, sectionOrder, itemOrder, isBonus, label, rewardAmount, rewardLabel, active)
+    VALUES (@id, @category, @sectionId, @sectionTitle, @sectionIcon, @sectionOrder, @itemOrder, @isBonus, @label, @rewardAmount, @rewardLabel, 1)
+  `);
+  const existing = db.prepare("SELECT id FROM mission_items WHERE id = ?");
+  const insertMissing = db.transaction((rows) => {
+    for (const row of rows) {
+      if (!existing.get(row.id)) insert.run(row);
+    }
+  });
+  insertMissing(MISSION_SEED);
+}
+
+syncMissionSeedItems();
+
 /* ------------------------------------------------------------------ */
 /* Prepared statements                                                  */
 /* ------------------------------------------------------------------ */
 const stmts = {
   getById: db.prepare("SELECT * FROM users WHERE id = ?"),
   insertNew: db.prepare(`
-    INSERT INTO users (id, username, firstName, tickets, rpPoints, forcedPrizeId, history, missionsWeekKey, missionsSelected, missionsConfirmed, clubGgId)
-    VALUES (@id, @username, @firstName, @tickets, @rpPoints, @forcedPrizeId, @history, @missionsWeekKey, @missionsSelected, @missionsConfirmed, @clubGgId)
+    INSERT INTO users (id, username, firstName, tickets, rpPoints, forcedPrizeId, history, missionsDailyKey, missionsWeekKey, missionsSelected, missionsConfirmed, clubGgId)
+    VALUES (@id, @username, @firstName, @tickets, @rpPoints, @forcedPrizeId, @history, @missionsDailyKey, @missionsWeekKey, @missionsSelected, @missionsConfirmed, @clubGgId)
   `),
   updateProfile: db.prepare("UPDATE users SET username = @username, firstName = @firstName WHERE id = @id"),
   updateTickets: db.prepare("UPDATE users SET tickets = @tickets WHERE id = @id"),
@@ -183,7 +217,7 @@ const stmts = {
     "UPDATE users SET tickets = @tickets, forcedPrizeId = NULL, rpPoints = @rpPoints, history = @history WHERE id = @id"
   ),
   updateMissions: db.prepare(
-    "UPDATE users SET missionsWeekKey = @missionsWeekKey, missionsSelected = @missionsSelected, missionsConfirmed = @missionsConfirmed WHERE id = @id"
+    "UPDATE users SET missionsDailyKey = @missionsDailyKey, missionsWeekKey = @missionsWeekKey, missionsSelected = @missionsSelected, missionsConfirmed = @missionsConfirmed WHERE id = @id"
   ),
   updateClubGgId: db.prepare("UPDATE users SET clubGgId = @clubGgId WHERE id = @id"),
   getAllShopItems: db.prepare(
@@ -210,6 +244,12 @@ const stmts = {
     SET label = @label, rewardAmount = @rewardAmount, rewardLabel = @rewardLabel, active = @active
     WHERE id = @id
   `),
+  getLeaderboard: db.prepare(`
+    SELECT id, username, firstName, rpPoints, clubGgId
+    FROM users
+    ORDER BY rpPoints DESC, id ASC
+    LIMIT ?
+  `),
 };
 
 /* ------------------------------------------------------------------ */
@@ -226,6 +266,7 @@ function rowToUser(row) {
     clubGgId: row.clubGgId || null,
     history: JSON.parse(row.history),
     missions: {
+      dailyKey: row.missionsDailyKey || null,
       weekKey: row.missionsWeekKey,
       selected: JSON.parse(row.missionsSelected),
       confirmed: JSON.parse(row.missionsConfirmed),
@@ -240,6 +281,7 @@ function getUser(telegramId) {
   const id = String(telegramId);
   let row = stmts.getById.get(id);
   if (!row) {
+    const dayKey = getCurrentDayKey();
     const weekKey = getCurrentWeekKey();
     stmts.insertNew.run({
       id,
@@ -249,6 +291,7 @@ function getUser(telegramId) {
       rpPoints: 0,
       forcedPrizeId: null,
       history: "[]",
+      missionsDailyKey: dayKey,
       missionsWeekKey: weekKey,
       missionsSelected: "{}",
       missionsConfirmed: "{}",
@@ -308,10 +351,34 @@ function consumeTicketAndRecordPrize(telegramId, prize) {
   return { user, ok: true };
 }
 
-function ensureCurrentMissionWeek(user) {
+function getMissionPeriod(mission) {
+  if (!mission) return "weekly";
+  if (mission.sectionId === "daily" || String(mission.id).startsWith("daily-")) return "daily";
+  if (mission.sectionId === "weekly" || String(mission.id).startsWith("weekly-")) return "weekly";
+  return "weekly";
+}
+
+function filterMissionsByPeriod(source, periodToDrop) {
+  const next = {};
+  for (const [missionId, value] of Object.entries(source || {})) {
+    const mission = getMissionItem(missionId);
+    if (getMissionPeriod(mission) !== periodToDrop) next[missionId] = value;
+  }
+  return next;
+}
+
+function ensureCurrentMissionPeriods(user) {
+  const currentDay = getCurrentDayKey();
   const currentWeek = getCurrentWeekKey();
+  if (user.missions.dailyKey !== currentDay) {
+    user.missions.selected = filterMissionsByPeriod(user.missions.selected, "daily");
+    user.missions.confirmed = filterMissionsByPeriod(user.missions.confirmed, "daily");
+    user.missions.dailyKey = currentDay;
+  }
   if (user.missions.weekKey !== currentWeek) {
-    user.missions = { weekKey: currentWeek, selected: {}, confirmed: {} };
+    user.missions.selected = filterMissionsByPeriod(user.missions.selected, "weekly");
+    user.missions.confirmed = filterMissionsByPeriod(user.missions.confirmed, "weekly");
+    user.missions.weekKey = currentWeek;
   }
   return user;
 }
@@ -319,6 +386,7 @@ function ensureCurrentMissionWeek(user) {
 function persistMissions(user) {
   stmts.updateMissions.run({
     id: user.id,
+    missionsDailyKey: user.missions.dailyKey || getCurrentDayKey(),
     missionsWeekKey: user.missions.weekKey,
     missionsSelected: JSON.stringify(user.missions.selected),
     missionsConfirmed: JSON.stringify(user.missions.confirmed),
@@ -327,14 +395,20 @@ function persistMissions(user) {
 
 function getUserMissions(telegramId) {
   const user = getUser(telegramId);
-  ensureCurrentMissionWeek(user);
+  ensureCurrentMissionPeriods(user);
   persistMissions(user);
-  return user.missions;
+  return {
+    ...user.missions,
+    resetAt: {
+      daily: getNextDailyReset().toISOString(),
+      weekly: getNextWeeklyReset().toISOString(),
+    },
+  };
 }
 
 function setMissionSelected(telegramId, missionId, selected) {
   const user = getUser(telegramId);
-  ensureCurrentMissionWeek(user);
+  ensureCurrentMissionPeriods(user);
   if (selected) user.missions.selected[missionId] = true;
   else delete user.missions.selected[missionId];
   persistMissions(user);
@@ -352,7 +426,7 @@ function setMissionSelected(telegramId, missionId, selected) {
 // them in the bot.
 function setMissionConfirmed(telegramId, missionId, confirmed) {
   const user = getUser(telegramId);
-  ensureCurrentMissionWeek(user);
+  ensureCurrentMissionPeriods(user);
   const wasConfirmed = !!user.missions.confirmed[missionId];
   const mission = getMissionItem(missionId);
   const amount = mission ? mission.rewardAmount : 0;
@@ -441,21 +515,21 @@ function getAllMissionItemsFlat() {
 function getMissionSections({ onlyActive = true } = {}) {
   const rows = (onlyActive ? stmts.getActiveMissionItems : stmts.getAllMissionItems).all();
   const result = { rp: [], keys: [] };
-  const sectionsById = {};
+  const sectionsById = { rp: {}, keys: {} };
   for (const row of rows) {
     const item = rowToMissionItem(row);
     const bucket = result[item.category];
     if (!bucket) continue;
-    if (!sectionsById[item.sectionId]) {
-      sectionsById[item.sectionId] = {
+    if (!sectionsById[item.category][item.sectionId]) {
+      sectionsById[item.category][item.sectionId] = {
         id: item.sectionId,
         title: item.sectionTitle,
         icon: item.sectionIcon,
         items: [],
       };
-      bucket.push(sectionsById[item.sectionId]);
+      bucket.push(sectionsById[item.category][item.sectionId]);
     }
-    const section = sectionsById[item.sectionId];
+    const section = sectionsById[item.category][item.sectionId];
     if (item.isBonus) {
       section.bonus = { label: item.label, reward: item.rewardAmount };
     } else {
@@ -565,6 +639,31 @@ function updateShopItem(id, { label, price, img, active }) {
   return getShopItem(id);
 }
 
+const purchaseShopItemTx = db.transaction((telegramId, itemId) => {
+  const user = getUser(telegramId);
+  const item = getShopItem(itemId);
+  if (!item || !item.active) return { ok: false, error: "unknown_product", user, item: null };
+  if (user.rpPoints < item.price) return { ok: false, error: "insufficient_points", user, item };
+
+  user.rpPoints -= item.price;
+  stmts.updateRp.run({ id: user.id, rpPoints: user.rpPoints });
+  return { ok: true, user, item };
+});
+
+function purchaseShopItem(telegramId, itemId) {
+  return purchaseShopItemTx(String(telegramId), String(itemId));
+}
+
+function getLeaderboard(limit = 20) {
+  return stmts.getLeaderboard.all(Math.max(1, Math.min(100, Number(limit) || 20))).map((row, index) => ({
+    rank: index + 1,
+    id: row.id,
+    name: row.username ? `@${row.username}` : row.firstName || `Player ${row.id.slice(-4)}`,
+    clubGgId: row.clubGgId || null,
+    score: row.rpPoints,
+  }));
+}
+
 module.exports = {
   getUser,
   touchUserProfile,
@@ -579,6 +678,8 @@ module.exports = {
   getShopSections,
   getShopItem,
   updateShopItem,
+  purchaseShopItem,
+  getLeaderboard,
   isValidMissionId,
   getMissionItem,
   getAllMissionsFlat,
