@@ -46,6 +46,53 @@ function rollPrize() {
 }
 
 /* ------------------------------------------------------------------ */
+/*  Ranks - based on RP Points balance                                 */
+/* ------------------------------------------------------------------ */
+const RANK_THRESHOLDS = [
+  { min: 250, label: "Діамант" },
+  { min: 100, label: "Золото" },
+  { min: 50, label: "Срібло" },
+  { min: 20, label: "Мідь" },
+];
+
+function getRankLabel(rpPoints) {
+  const found = RANK_THRESHOLDS.find((r) => rpPoints >= r.min);
+  return found ? found.label : "Без рангу";
+}
+
+/* ------------------------------------------------------------------ */
+/*  History - normalizes DB rows (spins + purchases) into UI shape     */
+/* ------------------------------------------------------------------ */
+function formatHistoryDate(iso) {
+  try {
+    return new Date(iso).toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric" });
+  } catch (e) {
+    return "";
+  }
+}
+
+function historyItemFromServer(raw) {
+  const date = formatHistoryDate(raw.date);
+  if (raw.type === "purchase") {
+    return { type: "purchase", item: { name: raw.name, price: raw.price }, date };
+  }
+  // Spin/prize entries - including legacy rows saved before "type" existed.
+  const meta = PRIZE_POOL.find((p) => p.id === raw.prizeId) || {};
+  return {
+    type: "prize",
+    prize: { name: raw.name, icon: meta.icon || "gift", rarity: meta.rarity || "medium" },
+    date,
+  };
+}
+
+function ratingForRarity(rarity) {
+  if (rarity === "veryRare") return 25;
+  if (rarity === "rare") return 15;
+  if (rarity === "medium") return 10;
+  return 5;
+}
+
+/* ------------------------------------------------------------------ */
 /*  Server communication (auth + authoritative box opening)           */
 /* ------------------------------------------------------------------ */
 function getInitData() {
@@ -75,6 +122,16 @@ async function syncWithServer() {
     state.balance = data.user.rpPoints;
     state.clubGgId = data.user.clubGgId || null;
     if (!state.clubGgId) state.showClubGgModal = true;
+
+    state.history = (data.user.history || []).map(historyItemFromServer);
+    const prizeEntries = state.history.filter((h) => h.type === "prize");
+    state.stats = {
+      ...state.stats,
+      boxesOpened: prizeEntries.length,
+      prizesWon: prizeEntries.length,
+      rating: prizeEntries.reduce((sum, h) => sum + ratingForRarity(h.prize.rarity), 0),
+      rank: getRankLabel(state.rpPoints),
+    };
   } catch (e) {
     // Not running inside Telegram / server unreachable - fall back to local demo state.
     console.warn("Could not sync with server, using local demo state:", e.message);
@@ -323,7 +380,7 @@ const state = {
   clubGgId: null,
   showClubGgModal: false,
   clubGgError: "",
-  stats: { name: "PokerKing", rank: "Gold", boxesOpened: 0, prizesWon: 0, rating: 0 },
+  stats: { name: "PokerKing", rank: "Без рангу", boxesOpened: 0, prizesWon: 0, rating: 0 },
 };
 
 function render() {
@@ -643,10 +700,23 @@ function renderMorePage() {
   const history = state.history;
   let body;
   if (history.length === 0) {
-    body = `<div class="mb-empty">Ти ще не відкривав жодного боксу</div>`;
+    body = `<div class="mb-empty">Ти ще не відкривав жодного боксу і нічого не купував</div>`;
   } else {
     body = `<div class="mb-history-list">` + history.map((h, i) => {
-      const rarity = RARITIES[h.prize.rarity];
+      if (h.type === "purchase") {
+        return `
+          <div class="mb-history-row" style="animation-delay:${i * 0.05}s;">
+            <div class="mb-history-icon" style="border-color:${COLORS.purple};">
+              ${icon("shopping-bag", 18, COLORS.purple)}
+            </div>
+            <div class="mb-history-info">
+              <div class="mb-history-name">Куплено: ${h.item.name}</div>
+              <div class="mb-history-date">${h.date} · −${h.item.price} RP</div>
+            </div>
+          </div>
+        `;
+      }
+      const rarity = RARITIES[h.prize.rarity] || RARITIES.medium;
       return `
         <div class="mb-history-row" style="animation-delay:${i * 0.05}s;">
           <div class="mb-history-icon" style="border-color:${rarity.color};">
@@ -664,16 +734,13 @@ function renderMorePage() {
     <div class="mb-page mb-subpage">
       <div class="mb-subpage-header">
         <h2 class="mb-subpage-title">Інше</h2>
-        <p class="mb-subpage-sub">Історія відкриттів</p>
+        <p class="mb-subpage-sub">Історія круток і покупок</p>
       </div>
       ${state.isAdmin ? `
         <button class="mb-btn-primary" data-action="open-admin" style="margin-bottom:16px;width:100%;">
           ${icon("shield", 18, "currentColor")} Адмін-панель
         </button>
       ` : ""}
-      <div style="opacity:0.6;font-size:12px;text-align:center;margin-bottom:16px;">
-        Debug: твій Telegram ID — ${state.debugTelegramId || "не визначено"}, admin: ${state.isAdmin ? "так" : "ні"}
-      </div>
       ${body}
     </div>
   `;
@@ -781,7 +848,6 @@ function renderPrizeModal(prize) {
       <div class="mb-modal-card" style="--rarity-color:${rarity.color};--rarity-glow:${rarity.glow};">
         <div class="mb-modal-badge">${icon("crown", 14)}<span>Вітаємо!</span></div>
         <div class="mb-modal-icon-wrap">${icon(prize.icon, 50, rarity.color, 'stroke-width="1.6"')}</div>
-        <div class="mb-modal-rarity" style="color:${rarity.color};">${rarity.label}</div>
         <div class="mb-modal-prize-name">${prize.name}</div>
         <p class="mb-modal-sub">${prizeSub}</p>
         <div class="mb-modal-actions">
@@ -880,7 +946,7 @@ function handleOpen() {
 
       state.history = [
         {
-          id: Date.now(),
+          type: "prize",
           prize: won,
           date: new Date().toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric" }),
         },
@@ -890,7 +956,8 @@ function handleOpen() {
         ...state.stats,
         boxesOpened: state.stats.boxesOpened + 1,
         prizesWon: state.stats.prizesWon + 1,
-        rating: state.stats.rating + (won.rarity === "mythic" ? 50 : won.rarity === "legendary" ? 25 : 5),
+        rating: state.stats.rating + ratingForRarity(won.rarity),
+        rank: getRankLabel(state.rpPoints),
       };
       haptic("success");
       render();
@@ -979,6 +1046,19 @@ async function handleBuy(itemId, price, label) {
     const data = await apiPost("/api/shop/buy", { initData: getInitData(), itemId });
     state.rpPoints = data.user.rpPoints;
     state.balance = data.user.rpPoints;
+    if (Array.isArray(data.user.history)) {
+      state.history = data.user.history.map(historyItemFromServer);
+    } else {
+      state.history = [
+        {
+          type: "purchase",
+          item: { name: label, price },
+          date: new Date().toLocaleDateString("uk-UA", { day: "2-digit", month: "2-digit", year: "numeric" }),
+        },
+        ...state.history,
+      ];
+    }
+    state.stats.rank = getRankLabel(state.rpPoints);
     haptic("success");
     showToast(`Придбано: ${label}`);
     render();

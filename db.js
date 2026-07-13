@@ -233,6 +233,9 @@ const stmts = {
   updateAfterPrize: db.prepare(
     "UPDATE users SET tickets = @tickets, forcedPrizeId = NULL, rpPoints = @rpPoints, history = @history WHERE id = @id"
   ),
+  updateAfterPurchase: db.prepare(
+    "UPDATE users SET rpPoints = @rpPoints, history = @history WHERE id = @id"
+  ),
   updateMissions: db.prepare(
     "UPDATE users SET missionsDailyKey = @missionsDailyKey, missionsWeekKey = @missionsWeekKey, missionsMonthKey = @missionsMonthKey, missionsSelected = @missionsSelected, missionsConfirmed = @missionsConfirmed WHERE id = @id"
   ),
@@ -360,7 +363,7 @@ function consumeTicketAndRecordPrize(telegramId, prize) {
   user.tickets -= 1;
   user.forcedPrizeId = null;
   user.rpPoints += prize.rpValue || 0;
-  user.history.unshift({ prizeId: prize.id, name: prize.name, date: new Date().toISOString() });
+  user.history.unshift({ type: "prize", prizeId: prize.id, name: prize.name, date: new Date().toISOString() });
   user.history = user.history.slice(0, 50);
   stmts.updateAfterPrize.run({
     id: user.id,
@@ -677,7 +680,15 @@ const purchaseShopItemTx = db.transaction((telegramId, itemId) => {
   if (user.rpPoints < item.price) return { ok: false, error: "insufficient_points", user, item };
 
   user.rpPoints -= item.price;
-  stmts.updateRp.run({ id: user.id, rpPoints: user.rpPoints });
+  user.history.unshift({
+    type: "purchase",
+    itemId: item.id,
+    name: item.label,
+    price: item.price,
+    date: new Date().toISOString(),
+  });
+  user.history = user.history.slice(0, 50);
+  stmts.updateAfterPurchase.run({ id: user.id, rpPoints: user.rpPoints, history: JSON.stringify(user.history) });
   return { ok: true, user, item };
 });
 

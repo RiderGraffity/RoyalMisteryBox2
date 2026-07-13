@@ -97,9 +97,7 @@ app.post("/api/open-box", async (req, res) => {
 
   notifyAdminsOfWin(tgUser, prize, user.clubGgId).catch((e) => console.error(e));
 
-  const displayName = tgUser.username
-    ? `@${tgUser.username}`
-    : [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") || "Гравець";
+  const displayName = [tgUser.first_name, tgUser.last_name].filter(Boolean).join(" ") || "Гравець";
   announceMysteryBoxWin({ displayName, prizeLabel: prize.name }).catch((e) => console.error(e));
 
   res.json({
@@ -109,6 +107,7 @@ app.post("/api/open-box", async (req, res) => {
       id: user.id,
       tickets: user.tickets,
       rpPoints: user.rpPoints,
+      history: user.history,
     },
   });
 });
@@ -173,6 +172,7 @@ app.post("/api/shop/buy", async (req, res) => {
       rpPoints: result.user.rpPoints,
       tickets: result.user.tickets,
       clubGgId: result.user.clubGgId,
+      history: result.user.history,
     },
   });
 });
