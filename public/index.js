@@ -46,18 +46,18 @@ function rollPrize() {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Ranks - based on RP Points balance                                 */
+/*  Ranks - based on number of Mystery Box openings                    */
 /* ------------------------------------------------------------------ */
 const RANK_THRESHOLDS = [
-  { min: 250, label: "Діамант" },
+  { min: 150, label: "Діамант" },
   { min: 100, label: "Золото" },
   { min: 50, label: "Срібло" },
-  { min: 20, label: "Мідь" },
+  { min: 0, label: "Бронза" },
 ];
 
-function getRankLabel(rpPoints) {
-  const found = RANK_THRESHOLDS.find((r) => rpPoints >= r.min);
-  return found ? found.label : "Без рангу";
+function getRankLabel(boxesOpened) {
+  const found = RANK_THRESHOLDS.find((r) => boxesOpened >= r.min);
+  return found ? found.label : "Бронза";
 }
 
 /* ------------------------------------------------------------------ */
@@ -125,12 +125,13 @@ async function syncWithServer() {
 
     state.history = (data.user.history || []).map(historyItemFromServer);
     const prizeEntries = state.history.filter((h) => h.type === "prize");
+    const boxesOpened = Number.isFinite(data.user.boxesOpened) ? data.user.boxesOpened : prizeEntries.length;
     state.stats = {
       ...state.stats,
-      boxesOpened: prizeEntries.length,
-      prizesWon: prizeEntries.length,
+      boxesOpened,
+      prizesWon: boxesOpened,
       rating: prizeEntries.reduce((sum, h) => sum + ratingForRarity(h.prize.rarity), 0),
-      rank: getRankLabel(state.rpPoints),
+      rank: getRankLabel(boxesOpened),
     };
   } catch (e) {
     // Not running inside Telegram / server unreachable - fall back to local demo state.
@@ -380,7 +381,7 @@ const state = {
   clubGgId: null,
   showClubGgModal: false,
   clubGgError: "",
-  stats: { name: "PokerKing", rank: "Без рангу", boxesOpened: 0, prizesWon: 0, rating: 0 },
+  stats: { name: "PokerKing", rank: "Бронза", boxesOpened: 0, prizesWon: 0, rating: 0 },
 };
 
 function render() {
@@ -952,12 +953,16 @@ function handleOpen() {
         },
         ...state.history,
       ];
+      const boxesOpened =
+        serverResult && Number.isFinite(serverResult.user.boxesOpened)
+          ? serverResult.user.boxesOpened
+          : state.stats.boxesOpened + 1;
       state.stats = {
         ...state.stats,
-        boxesOpened: state.stats.boxesOpened + 1,
-        prizesWon: state.stats.prizesWon + 1,
+        boxesOpened,
+        prizesWon: boxesOpened,
         rating: state.stats.rating + ratingForRarity(won.rarity),
-        rank: getRankLabel(state.rpPoints),
+        rank: getRankLabel(boxesOpened),
       };
       haptic("success");
       render();
@@ -1058,7 +1063,6 @@ async function handleBuy(itemId, price, label) {
         ...state.history,
       ];
     }
-    state.stats.rank = getRankLabel(state.rpPoints);
     haptic("success");
     showToast(`Придбано: ${label}`);
     render();

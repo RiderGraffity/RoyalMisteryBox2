@@ -35,7 +35,8 @@ db.exec(`
     missionsWeekKey TEXT,
     missionsSelected TEXT NOT NULL DEFAULT '{}',
     missionsConfirmed TEXT NOT NULL DEFAULT '{}',
-    clubGgId TEXT
+    clubGgId TEXT,
+    boxesOpened INTEGER NOT NULL DEFAULT 0
   );
 `);
 
@@ -76,6 +77,21 @@ function ensureMissionsMonthKeyColumn() {
 }
 
 ensureMissionsMonthKeyColumn();
+
+// Older databases created before ranks were based on box-opening counts
+// won't have this column yet - add it in place so existing installs don't
+// need a fresh DB. Existing users start at 0 (their past spins are still
+// visible in "history", they just won't retroactively count toward rank).
+function ensureBoxesOpenedColumn() {
+  const columns = db.prepare("PRAGMA table_info(users)").all();
+  const hasColumn = columns.some((c) => c.name === "boxesOpened");
+  if (!hasColumn) {
+    db.exec("ALTER TABLE users ADD COLUMN boxesOpened INTEGER NOT NULL DEFAULT 0");
+    console.log("[db] Added boxesOpened column to users table");
+  }
+}
+
+ensureBoxesOpenedColumn();
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS shop_items (
@@ -223,15 +239,15 @@ syncMissionSeedItems();
 const stmts = {
   getById: db.prepare("SELECT * FROM users WHERE id = ?"),
   insertNew: db.prepare(`
-    INSERT INTO users (id, username, firstName, tickets, rpPoints, forcedPrizeId, history, missionsDailyKey, missionsWeekKey, missionsMonthKey, missionsSelected, missionsConfirmed, clubGgId)
-    VALUES (@id, @username, @firstName, @tickets, @rpPoints, @forcedPrizeId, @history, @missionsDailyKey, @missionsWeekKey, @missionsMonthKey, @missionsSelected, @missionsConfirmed, @clubGgId)
+    INSERT INTO users (id, username, firstName, tickets, rpPoints, forcedPrizeId, history, missionsDailyKey, missionsWeekKey, missionsMonthKey, missionsSelected, missionsConfirmed, clubGgId, boxesOpened)
+    VALUES (@id, @username, @firstName, @tickets, @rpPoints, @forcedPrizeId, @history, @missionsDailyKey, @missionsWeekKey, @missionsMonthKey, @missionsSelected, @missionsConfirmed, @clubGgId, @boxesOpened)
   `),
   updateProfile: db.prepare("UPDATE users SET username = @username, firstName = @firstName WHERE id = @id"),
   updateTickets: db.prepare("UPDATE users SET tickets = @tickets WHERE id = @id"),
   updateRp: db.prepare("UPDATE users SET rpPoints = @rpPoints WHERE id = @id"),
   updateForcedPrize: db.prepare("UPDATE users SET forcedPrizeId = @forcedPrizeId WHERE id = @id"),
   updateAfterPrize: db.prepare(
-    "UPDATE users SET tickets = @tickets, forcedPrizeId = NULL, rpPoints = @rpPoints, history = @history WHERE id = @id"
+    "UPDATE users SET tickets = @tickets, forcedPrizeId = NULL, rpPoints = @rpPoints, history = @history, boxesOpened = @boxesOpened WHERE id = @id"
   ),
   updateAfterPurchase: db.prepare(
     "UPDATE users SET rpPoints = @rpPoints, history = @history WHERE id = @id"
@@ -284,6 +300,7 @@ function rowToUser(row) {
     rpPoints: row.rpPoints,
     forcedPrizeId: row.forcedPrizeId,
     clubGgId: row.clubGgId || null,
+    boxesOpened: row.boxesOpened || 0,
     history: JSON.parse(row.history),
     missions: {
       dailyKey: row.missionsDailyKey || null,
@@ -319,6 +336,7 @@ function getUser(telegramId) {
       missionsSelected: "{}",
       missionsConfirmed: "{}",
       clubGgId: null,
+      boxesOpened: 0,
     });
     row = stmts.getById.get(id);
   }
@@ -365,11 +383,13 @@ function consumeTicketAndRecordPrize(telegramId, prize) {
   user.rpPoints += prize.rpValue || 0;
   user.history.unshift({ type: "prize", prizeId: prize.id, name: prize.name, date: new Date().toISOString() });
   user.history = user.history.slice(0, 50);
+  user.boxesOpened += 1;
   stmts.updateAfterPrize.run({
     id: user.id,
     tickets: user.tickets,
     rpPoints: user.rpPoints,
     history: JSON.stringify(user.history),
+    boxesOpened: user.boxesOpened,
   });
   return { user, ok: true };
 }

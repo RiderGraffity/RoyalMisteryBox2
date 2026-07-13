@@ -42,6 +42,7 @@ app.post("/api/auth", (req, res) => {
       rpPoints: user.rpPoints,
       history: user.history,
       clubGgId: user.clubGgId,
+      boxesOpened: user.boxesOpened,
     },
   });
 });
@@ -108,6 +109,7 @@ app.post("/api/open-box", async (req, res) => {
       tickets: user.tickets,
       rpPoints: user.rpPoints,
       history: user.history,
+      boxesOpened: user.boxesOpened,
     },
   });
 });
